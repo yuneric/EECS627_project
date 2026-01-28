@@ -1,41 +1,51 @@
-module pe #(
-    parameter DATA_WIDTH  = 8
+module pe#(
+    parameter DATA_WIDTH  = 8,
     parameter PSUM_WIDTH  = 24  
 )(
     input wire clk,
     input wire rst_n,
-    input wire weight_load;                         //when we are in weight load phase?
+    input wire weight_load,                         //when we are in weight load phase?
     input wire [(PSUM_WIDTH - 1):0] psum_in,        //psum coming from the top pe
-    input wire [(DATA_WIDTH - 1):0] acc_in,         //activation flowing from the left 
-    input wire [(DATA_WIDTH - 1):0] weight_in,      //weight passed into the pe, when loading weights
+    input wire [(DATA_WIDTH - 1):0] act_in,         //activation flowing from the left 
+    input wire [(DATA_WIDTH - 1):0] weight_in,      //get weight from north pe
 
     output wire [(PSUM_WIDTH - 1):0] psum_out,      //psum -> below pe
-    output wire [(DATA_WIDTH - 1):0] weight_out
-)
+    output wire [(DATA_WIDTH - 1):0] weight_out,
+    output wire [(DATA_WIDTH - 1):0] act_out        // activations/ matrix numbers are passed to the right
+);
 
     wire [(PSUM_WIDTH-1):0] mac_result;
-    reg [(PSUM_WIDTH - 1):0] psum_reg;              //psum reg
+    // two's complement
+    reg signed [(PSUM_WIDTH - 1):0] psum_reg;              //psum reg
     reg [(DATA_WIDTH - 1):0] weight_reg;            //weight reg width shouldn't the same i think
-    reg [(DATA_WIDTH - 1):0] acc_reg;
+    reg [(DATA_WIDTH - 1):0] act_reg;
 
-    // psum = (acc_in * weight) + psum_passed from top
-    assign mac_result = (acc_in * weight_reg) + psum_in;
+    // psum = (act_in * weight) + psum_passed from top
+    assign mac_result = (act_in * weight_reg) + psum_in;
 
     // got this from discussion slide
     always @(posedge clk or negedge rst_n) begin
         if(!rst_n) begin
-            psum_out <= {DATA_WIDTH{1'b0}};
-            weight_out <= {DATA_WIDTH{1'b0}}
+            psum_reg <= {PSUM_WIDTH{1'b0}};
+            weight_reg <= {DATA_WIDTH{1'b0}};
+            act_reg <= {DATA_WIDTH{1'b0}};
         end
         else if (weight_load) begin 
+            // when loading weight we are passing that weight to the bottom pe
+            // no activation crossing to the right pe taking place?
             weight_reg <= weight_in;
-            weight_out <= weight_in;
+            act_reg <= {DATA_WIDTH{1'b0}};
+            psum_reg <= {PSUM_WIDTH{1'b0}};
         end
         else begin
-            psum_out <= 
-            acc_reg <= acc_in;
+            // controller will delay the input to the pe?
+            act_reg <= act_in;
             psum_reg <= mac_result;
         end
     end
+
+    assign psum_out = psum_reg;
+    assign act_out = act_reg;
+    assign weight_out = weight_reg;
 
 endmodule
