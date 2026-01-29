@@ -49,26 +49,62 @@ module pe_tb;
         #10;
 
         // --------- TEST 1: Weight Loading ---------
-        $display("\n ========= TEST 1: Weight Load ======");
+        $display("\n ========= TEST 1 ======");
         @(posedge clk);
         weight_load = 1;
         weight_in = 8'sd3;  // Load weight = 3
         
         @(posedge clk);
         weight_load = 0;
+
+        @(posedge clk);
+        weight_load = 1;
+        weight_in = 8'sd8;
+
         
         @(posedge clk);
-        if (weight_out == 8'sd3) begin
-            $display("Weight Loading, TEST PASS");
+        if (weight_out == 8'sd8) begin
             pass = pass + 1;
         end else begin
-            $display("TEST FAIL");
             fail = fail + 1;
         end
+
+        #10
+        weight_load = 0;
+
+        $display("\n ========= TEST 2 ======");
+        /// weight loaded
+        @(posedge clk);
+        psum_in = 20'sd50;
+        act_in = 8'sd10;
+        // psum = 50 + (10 * 8) = 130
+
+        @(posedge clk);
+        // act passed to the right, psum passed to the bottom
+        if ((act_out == 8'sd10) && (psum_out == 20'sd130)) begin
+            pass = pass + 1;
+        end else begin
+            fail = fail + 1;
+        end
+
+        @(posedge clk);
+        psum_in = 20'sd200;
+        // psum = 200 + (6 * 8) = 248
+        act_in = 8'sd6;
+
+
+        @(posedge clk);
+        // act passed to the right, psum passed to the bottom
+        if ((act_out == 8'sd6) && (psum_out == 20'sd248)) begin
+            pass = pass + 1;
+        end else begin
+            fail = fail + 1;
+        end
+
         $display("\n=========== RESULT ========");
         $display("Number of Passed = %1d", pass);
         $display("Number of Failed = %1d", fail);
-        
+
         #20;
         $finish;
     end
