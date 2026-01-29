@@ -1,6 +1,6 @@
 module pe#(
     parameter DATA_WIDTH  = 8,
-    parameter PSUM_WIDTH  = 24  
+    parameter PSUM_WIDTH  = 20 
 )(
     input wire clk,
     input wire rst_n,
@@ -21,6 +21,8 @@ module pe#(
     reg [(DATA_WIDTH - 1):0] act_reg;
 
     // psum = (act_in * weight) + psum_passed from top
+    // int8 * int8 = 16 bit product  + N rows (16 by 16 PEs) whose product is 16 bits
+    // psum_wdith = 16 bits + log2(N) = 20 bits
     assign mac_result = (act_in * weight_reg) + psum_in;
 
     // got this from discussion slide
