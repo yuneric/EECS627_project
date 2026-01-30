@@ -5,13 +5,13 @@ module pe_tb;
     reg         clk;
     reg         rst_n;
     reg         weight_load;
-    reg  [19:0] psum_in;
-    reg  [7:0]  act_in;
-    reg  [7:0]  weight_in;
+    reg  signed [19:0] psum_in;
+    reg  signed [7:0]  act_in;
+    reg  signed [7:0]  weight_in;
 
-    wire [19:0] psum_out;
-    wire [7:0]  weight_out;
-    wire [7:0]  act_out;
+    wire signed [19:0] psum_out;
+    wire signed [7:0]  weight_out;
+    wire signed [7:0]  act_out;
 
     pe #(
         .DATA_WIDTH(8),
@@ -48,8 +48,8 @@ module pe_tb;
 
         #10;
 
-        // --------- TEST 1: Weight Loading ---------
-        $display("\n ========= TEST 1 ======");
+        // --------- TEST 1 ---------
+        // $display("\n ========= TEST 1 ======");
         @(posedge clk);
         weight_load = 1;
         weight_in = 8'sd3;  // Load weight = 3
@@ -72,7 +72,7 @@ module pe_tb;
         #10
         weight_load = 0;
 
-        $display("\n ========= TEST 2 ======");
+        //$display("\n ========= TEST 2 ======");
         /// weight loaded
         @(posedge clk);
         psum_in = 20'sd50;
@@ -100,6 +100,32 @@ module pe_tb;
         end else begin
             fail = fail + 1;
         end
+        // --------- TEST 3 ---------
+        //$display("\n ========= TEST 4 ========");
+        @(posedge clk);
+        psum_in = 20'sd5;
+        act_in = -8'sd2;  // activation = -2
+        // psum_out = 5 + (-2* 8) = 5 - 16 = -11
+
+        @(posedge clk);
+        if (psum_out == -20'sd11 && (act_out == -8'sd2)) begin
+            pass = pass + 1;
+        end else begin
+            fail = fail + 1;
+        end
+
+        //$display("\n ========= TEST 5 ========");
+        @(posedge clk);
+        psum_in = 20'sd100;
+        act_in = 8'sd0;
+        // Expected: psum_out = 100 + (0 * 8) = 100
+
+        @(posedge clk);
+        if ((psum_out == 20'sd100) && (act_out == 8'sd0)) begin
+            pass = pass + 1;
+        end else begin
+            fail = fail + 1;
+        end
 
         $display("\n=========== RESULT ========");
         $display("Number of Passed = %1d", pass);
@@ -109,9 +135,9 @@ module pe_tb;
         $finish;
     end
 
-    initial begin
-        $dumpfile("pe_tb.vcd");
-        $dumpvars(0, pe_tb);
-    end
+    // initial begin
+    //     $dumpfile("pe_tb.vcd");
+    //     $dumpvars(0, pe_tb);
+    // end
 
 endmodule
