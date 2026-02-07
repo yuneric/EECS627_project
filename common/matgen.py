@@ -2,8 +2,9 @@ import numpy as np
 from scipy import signal
 
 '''
-NOTE: All this matmult stuff is in HWC format
+NOTE: All this matmult stuff is in HWC format unless specified otherwise
 '''
+
 def rand_mat_gen_2D(rows, cols, lower=-10, upper=10):
     return np.random.randint(lower, upper, (rows, cols), dtype=np.int8)
 
@@ -17,7 +18,7 @@ def rand_mat_gen_3D(rows, cols, depth, lower=-10, upper=10):
 def rand_mat_gen_4D(rows, cols, depth, N, lower=-10, upper=10):
     return np.random.randint(lower, upper, (N, rows, cols, depth), dtype=np.int8)
 
-def mat_gen_3D(rows, cols, depth, lower=-10, upper=10):
+def mat_gen_3D(rows, cols, depth):
     matrix = np.empty((rows, cols, depth), dtype='<U10')
     for mat_idx in range(depth):
         for row in range(rows):
@@ -25,7 +26,7 @@ def mat_gen_3D(rows, cols, depth, lower=-10, upper=10):
                 matrix[row][col][mat_idx] = str(row*cols + col) + str(chr(ord('a') + mat_idx))
     return matrix
 
-def mat_gen_4D(rows, cols, depth, N, lower=-10, upper=10):
+def mat_gen_4D(rows, cols, depth, N):
     matrix = np.empty((N, rows, cols, depth), dtype='<U10')
     for filt in range(N):
         for mat_idx in range(depth):
@@ -37,11 +38,6 @@ def mat_gen_4D(rows, cols, depth, N, lower=-10, upper=10):
 def int8_to_hex(val):
     return f"{val.view(dtype=np.uint8):02X}"
 
-def create_mat_hex(filename, matrix):
-    print(matrix.shape)
-    # dim = matrix.shape
-    # with open(filename, w) as file:
-
 def print_2D_matrix(file, matrix):
     dims = matrix.shape
     rows = dims[0]
@@ -51,7 +47,7 @@ def print_2D_matrix(file, matrix):
         for col in range(cols):
             file.write(f'{matrix[row][col]:5d} ' )
         file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_3D_matrix_CHW(file, matrix):
     dims = matrix.shape
@@ -65,7 +61,7 @@ def print_3D_matrix_CHW(file, matrix):
             for col in range(cols):
                 file.write(f'{matrix[mat_idx][row][col]:5d} ' )
             file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_3D_matrix(file, matrix):
     dims = matrix.shape
@@ -79,7 +75,7 @@ def print_3D_matrix(file, matrix):
             for col in range(cols):
                 file.write(f'{matrix[row][col][mat_idx]:5d} ' )
             file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_4D_matrix(file, matrix):
     dims = matrix.shape
@@ -97,7 +93,7 @@ def print_4D_matrix(file, matrix):
                     file.write(f'{matrix[filt][row][col][mat_idx]:5d} ' )
                 file.write('\n')
         file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_2D_matrix_str(file, matrix):
     dims = matrix.shape
@@ -108,7 +104,7 @@ def print_2D_matrix_str(file, matrix):
         for col in range(cols):
             file.write(f'{matrix[row][col]:>5} ' )
         file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_3D_matrix_str(file, matrix):
     dims = matrix.shape
@@ -122,7 +118,7 @@ def print_3D_matrix_str(file, matrix):
             for col in range(cols):
                 file.write(f'{matrix[row][col][mat_idx]:>5} ' )
             file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_4D_matrix_str(file, matrix):
     dims = matrix.shape
@@ -140,11 +136,11 @@ def print_4D_matrix_str(file, matrix):
                     file.write(f'{matrix[filt][row][col][mat_idx]:>5} ' )
                 file.write('\n')
         file.write('\n')
-    print_mem(file, matrix)
+    file.write('\n')
 
 def print_mem(file, matrix):
     file.write('Mem layout:\n')
-    file.write(f"{matrix.ravel()}")
+    file.write(f"{matrix.ravel()}\n")
     file.write('\n')
 
 def calc_output_dim(Wi, Hi, Wf, Hf, stride):
@@ -164,3 +160,34 @@ def convolve_3D(ifmap, filtr, stride=1):
     result = result.squeeze()
     result = result[::stride, ::stride]
     return result
+
+import numpy as np
+
+# Thanks Gemini (im tired)
+def write_hex_3D(matrix, file, word_width_bytes=4, little_endian=True):
+    # Flatten matrix to a 1D stream of bytes
+    # Ensure it's int8 and then cast to unsigned 8-bit to handle negative hex values correctly
+    raw_bytes = matrix.flatten().astype(np.int8).view(np.uint8)
+    
+    # Calculate how many words we have
+    num_bytes = len(raw_bytes)
+    
+    for i in range(0, num_bytes, word_width_bytes):
+        # Grab a slice of bytes equal to the word width
+        chunk = raw_bytes[i : i + word_width_bytes]
+        
+        # Handle padding if the matrix size isn't perfectly divisible by word_width
+        if len(chunk) < word_width_bytes:
+            padding = np.zeros(word_width_bytes - len(chunk), dtype=np.uint8)
+            chunk = np.concatenate((chunk, padding))
+        
+        if little_endian:
+            # [Byte0, Byte1, Byte2, Byte3] -> Byte3Byte2Byte1Byte0
+            word_hex = "".join(f"{b:02X}" for b in reversed(chunk))
+        else:
+            # [Byte0, Byte1, Byte2, Byte3] -> Byte0Byte1Byte2Byte3
+            word_hex = "".join(f"{b:02X}" for b in chunk)
+            
+        file.write(word_hex + '\n')
+
+

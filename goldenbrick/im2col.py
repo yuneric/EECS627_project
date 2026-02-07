@@ -15,17 +15,29 @@ def im2col(ifmap, filters, options):
     if options.human_readable:
         txt_file.write(('#'*30) + '\n'  + 'IFMAP:\n')
         print_3D_matrix_str(txt_file, ifmap)
-        txt_file.write('\n')
+        print_mem(txt_file, ifmap)
+
         txt_file.write(('#'*30) + '\n' + 'FILTERS:\n')
         print_4D_matrix_str(txt_file, filters)
-        txt_file.write('\n')
+        print_mem(txt_file, filters)
     else:
         txt_file.write(('#'*30) + '\n'  + 'IFMAP:\n')
         print_3D_matrix(txt_file, ifmap)
-        txt_file.write('\n')
+        print_mem(txt_file, ifmap)
+
         txt_file.write(('#'*30) + '\n'  + 'FILTERS:\n')
         print_4D_matrix(txt_file, filters)
-        txt_file.write('\n')
+        print_mem(txt_file, filters)
+
+
+        # Write the input hex files
+        hex_file = open("ifmap_" + options.pre_hex_filename, 'w')
+        write_hex_3D(ifmap, hex_file)
+        hex_file.close()
+        hex_file = open("filters_" + options.pre_hex_filename, 'w')
+        write_hex_3D(filters, hex_file)
+        hex_file.close()
+
 
     # Ifmap dims
     Hi = ifmap.shape[0]
@@ -134,17 +146,17 @@ def im2col(ifmap, filters, options):
     if options.human_readable:
         txt_file.write(('#'*30) + '\n'  + 'Lowered IFMAP:\n')
         print_2D_matrix_str(txt_file, lowered_ifmap)
-        txt_file.write('\n')
+        print_mem(txt_file, lowered_ifmap)
         txt_file.write(('#'*30) + '\n' + 'Lowered FILTERS:\n')
         print_2D_matrix_str(txt_file, lowered_filters)
-        txt_file.write('\n')
+        print_mem(txt_file, lowered_filters.transpose())
     else:
         txt_file.write(('#'*30) + '\n'  + 'Lowered IFMAP:\n')
         print_2D_matrix(txt_file, lowered_ifmap)
-        txt_file.write('\n')
+        print_mem(txt_file, lowered_ifmap)
         txt_file.write(('#'*30) + '\n'  + 'Lowered FILTERS:\n')
         print_2D_matrix(txt_file, lowered_filters)
-        txt_file.write('\n')
+        print_mem(txt_file, lowered_filters.transpose())
 
     ########################
     #  Convolve and Check  #
@@ -172,10 +184,29 @@ def im2col(ifmap, filters, options):
         # Write outputs
         txt_file.write(('#'*30) + '\n'  + 'Matmult Output:\n')
         print_2D_matrix(txt_file, result)
-        txt_file.write('\n')
+        print_mem(txt_file, result.transpose())
+
         txt_file.write(('#'*30) + '\n'  + '3D Convolution Output:\n')
         print_3D_matrix_CHW(txt_file, golden_result)
-        txt_file.write('\n')
+        print_mem(txt_file, golden_result)
+
+        # Write the output hex files
+        hex_file = open("ifmap_" + options.post_hex_filename, 'w')
+        write_hex_3D(lowered_ifmap, hex_file)
+        hex_file.close()
+
+        hex_file = open("filters_" + options.post_hex_filename, 'w')
+        write_hex_3D(lowered_filters.transpose(), hex_file)
+        hex_file.close()
+
+        hex_file = open("output_" + options.post_hex_filename, 'w')
+        write_hex_3D(result.transpose(), hex_file)
+        hex_file.close()
+
+    
+    txt_file.close()
+
+    return lowered_ifmap, lowered_filters
 
 
     
@@ -197,11 +228,11 @@ if __name__ == "__main__":
                         description='goldenbrick im2col algorithm',
                         epilog='teehee')
 
-    parser.add_argument('-i_r', '--ifmap_rows', type=int, default=3)     # rows in activations
-    parser.add_argument('-i_c', '--ifmap_cols', type=int, default=3)     # cols in activations
-    parser.add_argument('-f_r', '--filters_rows', type=int, default=2)     # rows in filter
-    parser.add_argument('-f_c', '--filters_cols', type=int, default=2)     # cols in filter
-    parser.add_argument('-f_n', '--filters', type=int, default=2)       # number of filters
+    parser.add_argument('-i_row', '--ifmap_rows', type=int, default=3)     # rows in activations
+    parser.add_argument('-i_col', '--ifmap_cols', type=int, default=3)     # cols in activations
+    parser.add_argument('-f_row', '--filters_rows', type=int, default=2)     # rows in filter
+    parser.add_argument('-f_col', '--filters_cols', type=int, default=2)     # cols in filter
+    parser.add_argument('-f_num', '--filters', type=int, default=2)       # number of filters
     parser.add_argument('-c', '--channels', type=int, default=3)      # input channels
     parser.add_argument('-str', '--stride', type=int, default=1)      # stride for matrix convolution
 
