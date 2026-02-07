@@ -154,14 +154,14 @@ def im2col(ifmap, filters, options):
         # Do a 3D convolution on our inputs and get a golden result
         golden_result = np.empty((options.filters, Ho, Wo), dtype=np.int8)
         for filtr in range(options.filters):
-            golden_result[filtr] = convolve_3D(ifmap, filters[filtr])
+            golden_result[filtr] = convolve_3D(ifmap, filters[filtr], options.stride)
 
         # Do matmult with my lowered matrices
         result = np.matmul(lowered_ifmap, lowered_filters)
 
         # Check that everything is correct
         result = np.transpose(result)
-        result_vec = golden_result.ravel()
+        result_vec = result.ravel()
         golden_result_vec = golden_result.ravel()
         for idx in range(Ho * Wo * options.filters):
             if (result_vec[idx] != golden_result_vec[idx]):

@@ -155,11 +155,12 @@ def calc_output_dim(Wi, Hi, Wf, Hf, stride):
 def convert_HWC_to_CHW_3D(matrix):
     return np.transpose(matrix, (2,0,1))
 
-def convolve_3D(ifmap, filtr):
+def convolve_3D(ifmap, filtr, stride=1):
     new_ifmap = convert_HWC_to_CHW_3D(ifmap)
     new_filtr = convert_HWC_to_CHW_3D(filtr)
     # Technically we want "correlation" because "convolution" actually flips the matrix 180
     result = signal.correlate(new_ifmap, new_filtr, mode='valid')
     # 3D to 2D
     result = result.squeeze()
+    result = result[::stride, ::stride]
     return result
