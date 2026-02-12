@@ -47,7 +47,7 @@ class skew_buf:
         self.delay_buf[:, 0] = input_col
         return output_col
 
-# systolic array with the buffering we desire so deeply
+# Systolic array with the buffering we desire so deeply
 class systolic_array_buffered:
     """
     Cycle-Accurate Weight-Stationary Model with delay and weight loading
@@ -62,11 +62,7 @@ class systolic_array_buffered:
         self.input_skew = skew_buf((SA_dim))                                    # Buffer to skew data into the SA
         self.output_skew = skew_buf((SA_dim))                                   # Data skew out to realign SA data
 
-        self.cycle_delay_to_accum_buf = 1 + \
-                                        2 + \
-                                        self.SA_dim + \
-                                        self.SA_dim
-        self.en_accum_delay_buf = delay_buf((self.cycle_delay_to_accum_buf))    # Need this so that the accumulator buffer only enables when theres actually data
+        self.en_accum_delay_buf = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))    # Need this so that the accumulator buffer only enables when theres actually data
 
         self.reset()
 
@@ -83,11 +79,11 @@ class systolic_array_buffered:
         self.accum_buffer_sel    = 0
 
 
-        self.partial_sum        = np.zeros(self.SA_dim)
-        self.new_partial_sum    = np.zeros(self.SA_dim)
-        self.array_output       = np.zeros(self.SA_dim)
-        self.array_input        = np.zeros(self.SA_dim)
-        self.skew_input         = np.zeros(self.SA_dim)
+        self.partial_sum        = np.zeros(self.SA_dim) # (partial_sum) Reg that sits between SA skew and accum buffer
+        self.array_output       = np.zeros(self.SA_dim) # (array_output) Reg that sits between SA and SA output skew
+        self.array_input        = np.zeros(self.SA_dim) # (array_input) Reg that sits between SA input skew and SA
+        self.skew_input         = np.zeros(self.SA_dim) # (skew_input) Reg that sits between SA and SA skew
+          
 
         self.old_partial_sum = 0
 
@@ -104,7 +100,7 @@ class systolic_array_buffered:
         return self.accum_buffer_done.read()
 
     def switch_accum_buffer(self):
-        # Should just switch the pointers
+        # Just switch the pointers
         self.accum_buffer_done.reset()
         tmp = self.accum_buffer_done
         self.accum_buffer_done = self.accum_buffer_working
@@ -116,7 +112,7 @@ class systolic_array_buffered:
         if(self.accum_buffer_en):
             # Only start doing reads and writes when data is available
             if(self.accum_buffer_primed):
-                    self.old_partial_sum = self.accum_buffer_working.write(self.accum_buffer_working.read() + self.partial_sum)
+                    self.accum_buffer_working.write(self.accum_buffer_working.read() + self.partial_sum)
             else:
                 # Wait til its full (primed) to start reading
                 self.accum_buffer_working.write(self.partial_sum)
@@ -125,10 +121,10 @@ class systolic_array_buffered:
         self.accum_buffer_en = self.en_accum_delay_buf.delay(self.delay_buf_input) # (accum_buffer_en) Has to arrive at the same time as partial sum
 
         # Pipelined stages
-        self.partial_sum = self.output_skew.skew_alt(self.array_output)      # (partial_sum) Reg that sits between SA skew and accum buffer
-        self.array_output = self.SA.step(self.array_input)                   # (array_output) Reg that sits between SA and SA output skew
-        self.array_input = self.input_skew.skew(self.skew_input)             # (array_input) Reg that sits between SA input skew and SA
-        if(not self.input_buffer.empty()):                                   # (skew_input) Reg that sits between SA and SA skew
+        self.partial_sum = self.output_skew.skew_alt(self.array_output) # output data skew realignment
+        self.array_output = self.SA.step(self.array_input)              # systolic array
+        self.array_input = self.input_skew.skew(self.skew_input)        # input data skew
+        if(not self.input_buffer.empty()):                              # input buffer data
             self.delay_buf_input = 1
             self.skew_input = self.input_buffer.read()
         else:
@@ -143,11 +139,9 @@ def main(options):
     for row in range(test_inputs.shape[0]):
         test_inputs[row][:] = row + 1
     test_weights =  np.zeros((options.systolic_array_dim, options.systolic_array_dim)) + 1
-
     golden_output = np.matmul(test_inputs, test_weights)
 
     SA_dut = systolic_array_buffered(options.systolic_array_dim, options.input_buffer_depth, options.weight_buffer_depth, options.accum_buffer_depth)
-
     SA_dut.reset()
 
     # WRITE THE WEIGHT BUFFER
@@ -158,7 +152,8 @@ def main(options):
     for row in range(options.systolic_array_dim):
         SA_dut.load_weight_row(row)
 
-    num_cycles =    50 # NUM CYCLES TO RUN
+    # NUM CYCLES TO RUN
+    num_cycles = 50
 
     # LOAD SOME DATA TWICE
     for data_idx in range(options.systolic_array_dim):
