@@ -2,6 +2,8 @@ import numpy as np
 import argparse
 import sys
 import os
+import math
+import copy
 
 # Add the common script to our path so we can get some epic func's
 script_dir = os.path.dirname(__file__) 
@@ -9,6 +11,8 @@ scripts_path = os.path.join(script_dir, '../common')
 sys.path.append(scripts_path) 
 
 from matgen import *
+from systolic_array import SystolicArrayGolden
+from accum_buf import accum_buf
 
 def im2col(ifmap, filters, options):
     txt_file = open(options.txt_filename, 'w')
@@ -199,17 +203,91 @@ def im2col(ifmap, filters, options):
         write_hex_3D(lowered_filters.transpose(), hex_file)
         hex_file.close()
 
-        hex_file = open("output_" + options.post_hex_filename, 'w')
-        write_hex_3D(result.transpose(), hex_file)
-        hex_file.close()
+        # hex_file = open("output_" + options.post_hex_filename, 'w')
+        # write_hex_3D(result.transpose(), hex_file)
+        # hex_file.close()
 
     
     txt_file.close()
 
     return lowered_ifmap, lowered_filters
 
+class im2col_engin:
+    def __init__(self, ifmap, filters, stride, SA_dim, buf_dim):
+        self.SA_dim = SA_dim
+        self.word_size = SA_dim
+        self.stride = stride
 
-    
+        # Systolic array
+        self.systolic_array_shape = (SA_dim, SA_dim)
+        self.systolic_array = SystolicArrayGolden(SA_dim, SA_dim)
+
+        # Accumulation buffer
+        if(buf_entries < SA_dim):
+            print(f"ERROR: Buf entries < SA_dim")
+            exit(0)
+        self.buf_dim = buf_dim
+        self.accum_buf = accum_buf(buf_dim**2, self.word_size)
+        self.accum_buf.reset(buf_dim**2)
+
+        self.init_mem(ifmap, filters)
+
+    def init_mem(self, ifmap, filters):
+        self.Hi = ifmap.shape[0] # height ifmap
+        self.Wi = ifmap.shape[1] # width ifmap
+        self.Ci = ifmap.shape[2] # input channels
+
+        self.Nf = filters.shape[0]  # num filters
+        self.Hf = filters.shape[1]  # height filters
+        self.Wf = filters.shape[2]  # width filters
+
+        self.Wo, self.Ho = calc_output_dim(self.Wi, self.Hi, self.Wf, self.Hf, self.stride)
+
+        ifmap_1D = ifmap.ravel()
+        filters_1D = filters.ravel()
+        main_mem = np.concatenate((ifmap_1D, filters_1D))
+
+        # Generate a memory layout of words of word_size (where word_size is the number of data elements)
+        # Channels are padded with 0's if they dont fill the whole word
+        word = [[] for _ in range(self.word_size)]
+        self.mem = []
+        word_idx = 0
+        print(main_mem)
+        for idx in range(main_mem.shape[0]):
+            word[word_idx] = main_mem[idx]
+            if(((idx + 1) % self.Ci) == 0):
+                # Do zero padding
+                zero_pad = self.word_size - word_idx - 1
+                for zero_idx in range(zero_pad):
+                    word[self.word_size - zero_idx - 1] = 0
+                self.mem.append(copy.deepcopy(word))
+                word_idx = 0
+            elif(word_idx == self.word_size - 1):
+                # Finished a word
+                self.mem.append(copy.deepcopy(word))
+                word_idx = 0
+            else:
+                word_idx += 1
+        print(self.mem)
+        
+        self.channel_words = int(math.ceil(self.Ci / self.word_size))
+        self.ifmap_base_address = 0
+        self.filters_base_address = self.Hi * self.Wi * self.channel_words
+
+    def run_im2col(self):
+        weights = np.zeros(self.systolic_array_shape)
+        # Outermost loop is the tiling of the output matrix
+        for output_row in range(0, self.Ho, self.buf_dim):
+            for output_col in range(0, self.Wo, self.buf_dim):
+                
+        # Load a channel of pixels for (SA_dim) filters
+        
+        
+
+
+            
+
+
 def main(options):
     np.random.seed(options.seed)
     if options.human_readable:
@@ -218,7 +296,9 @@ def main(options):
     else:
         mat_ifmap = rand_mat_gen_3D(options.ifmap_rows, options.ifmap_cols, options.channels, options.lower_bound, options.upper_bound)
         mat_filters = rand_mat_gen_4D(options.filters_rows, options.filters_cols, options.channels, options.filters, options.lower_bound, options.upper_bound)
+
     im2col(mat_ifmap, mat_filters, options)
+    im2col_obj = im2col_engin(mat_ifmap, mat_filters, options.stride, 4, 4*4)
 
 if __name__ == "__main__":
 
@@ -235,6 +315,7 @@ if __name__ == "__main__":
     parser.add_argument('-f_num', '--filters', type=int, default=2)       # number of filters
     parser.add_argument('-c', '--channels', type=int, default=3)      # input channels
     parser.add_argument('-str', '--stride', type=int, default=1)      # stride for matrix convolution
+    # parser.add_argument('-word', '--word_size', type=int, default=8)      # word size for main mem
 
     parser.add_argument('-l', '--lower_bound', type=int, default=-2)    # lower bound of values
     parser.add_argument('-u', '--upper_bound', type=int, default=2)     # upper bound of values
@@ -246,11 +327,11 @@ if __name__ == "__main__":
 
     parser.add_argument('-prehex', '--pre_hex_filename',        # name of hex output file
                         type=str, default='pre_im2col.hex')
-    parser.add_argument('-posthex', '--post_hex_filename',        # name of hex output file
+    parser.add_argument('-posthex', '--post_hex_filename',      # name of hex output file
                         type=str, default='post_im2col.hex')
 
-    parser.add_argument('-txt', '--txt_filename',        # name of txt output file
-                        type=str, default='imm2col.txt')
+    parser.add_argument('-txt', '--txt_filename',               # name of txt output file
+                        type=str, default='im2col.matrix.txt')
 
 
     options = parser.parse_args()
