@@ -4,12 +4,6 @@ import sys
 import os
 import copy
 
-# Add the common script to our path so we can get some epic func's
-script_dir = os.path.dirname(__file__) 
-scripts_path = os.path.join(script_dir, '../common') 
-sys.path.append(scripts_path) 
-
-from matgen import *
 from systolic_array import SystolicArrayGolden
 from accum_buf import configurable_fifo
 

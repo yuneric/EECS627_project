@@ -22,13 +22,13 @@ class systolic_array_backend:
         self.shift_val  = 0
         self.maxpool_en = 0
 
-        self.relu_input        = np.zeros((self.channels))
+        # Setup pipeline
+        self.relu_output       = np.zeros((self.channels))
         self.scale_clip_output = np.zeros((self.channels))
-
-        # Setup maxpool
         self.maxpool_output     = np.zeros((self.channels))
+        self.write_addr        = 0
         self.maxpool_valid_out  = 0
-        self.valid_data_in      = np.zeros((3))
+        self.valid_data_in      = np.zeros((2))
         self.reset_maxpool()
 
         # Output data buffer
@@ -84,9 +84,12 @@ class systolic_array_backend:
     def enable_relu(self):
         self.relu_en = 1
     
+    def disable_relu(self):
+        self.relu_en = 0
+
     # Support k = 2, s = 2 maxpool
     def enable_maxpool(self):
-        self.reset()
+        self.reset_maxpool()
         self.maxpool_en = 1
 
     def disable_maxpool(self):
@@ -119,8 +122,10 @@ class systolic_array_backend:
                 # If done do the maxpool
                 for pixel in range(self.output_line_buffer0.shape[0]):
                     for channel in range(self.channels):
+                        # Max adjacent (col) pixels
                         self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
                         self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
+                        # Max pixels from different rows
                         self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
                 self.stream_output = 1
                 self.done_fill = 0
@@ -192,24 +197,26 @@ class systolic_array_backend:
     def read_output_sram(self, addr):
         return self.output_sram[addr]
     
-    def step(input_word, input_valid):
+    def step(self, input_word, input_valid):
         # Pipeline
         # Output SRAM
         if(self.maxpool_valid_out == 1):
-            self.output_sram[write_addr] = self.maxpool_output
-            write_addr += 1
+            self.output_sram[self.write_addr] = self.maxpool_output
+            self.write_addr += 1
         
         # Maxpool
-        self.valid_data_in[2] = self.valid_data_in[1]
-        self.maxpool_output, self.maxpool_valid_out = self.maxpool_step(scale_clip_output, self.maxpool_valid_data_in[2])
+        self.maxpool_output, self.maxpool_valid_out = self.maxpool_step(self.scale_clip_output, self.valid_data_in[1])
         
         # Scale and Clip
         self.valid_data_in[1] = self.valid_data_in[0]
-        self.scale_clip_output = self.scale_and_clip(relu_output)
+        self.scale_clip_output = self.scale_and_clip(self.relu_output)
         
         # Relu
         self.valid_data_in[0] = input_valid
-        self.relu_output = self.relu(input_word)
+        if(input_valid == 1):
+            self.relu_output = self.relu(input_word)
+        else:
+            self.relu_output = np.zeros(self.channels)
 
 def test_relu(options):
     # TEST RELU, SCALING AND SHIFTING
@@ -345,13 +352,97 @@ def test_maxpool(options):
             if(result[row][channel] != golden_result_transformed[row][channel]):
                 print('ERROR: doesnt match correct output')
 
+def make_test(test_num, rows, cols, channels, bits, relu, scale, lower, upper, num_cycles):
+    
+    print(f'######## Test {test_num} #########')
+
+    test_mat = np.random.randint(lower, upper, (rows, cols, channels))
+
+    SA_be = systolic_array_backend(channels, bits, rows)
+    test_mat_2d = convert3d_2d(test_mat)
+    num_inputs = test_mat_2d.shape[0]
+
+    print('cycle | relu_output | scale_clip_output | maxpool_output | maxpool_valid_out | valid_data_in[1:0] | write_addr')
+    data_idx = 0
+    SA_be.enable_maxpool()
+    SA_be.set_window(scale)
+    if(relu):
+        SA_be.enable_relu()
+
+    for cycle in range(num_cycles):
+        print(f'{cycle} | {SA_be.relu_output} | {SA_be.scale_clip_output} | {SA_be.maxpool_output} | {SA_be.maxpool_valid_out} | {SA_be.valid_data_in} | {SA_be.write_addr}')
+        if(data_idx < num_inputs):
+            SA_be.step(test_mat_2d[data_idx], 1)
+            data_idx += 1
+        else:
+            SA_be.step(None, 0)
+
+    num_output_rows = rows//2 * cols//2 
+    result_arr_2d = np.zeros((num_output_rows, channels))
+    for output in range(num_output_rows):
+        result_arr_2d[output] = SA_be.read_output_sram(output)
+
+    golden_result = np.zeros((rows//2, cols//2, channels))
+        
+    for channel in range(channels):
+        golden_result[:, :, channel] = maxpool2d(test_mat[:, :, channel])
+        
+    golden_result_2d = convert3d_2d(golden_result)
+
+    if(relu):
+        golden_result_2d[golden_result_2d<0] = 0
+
+    for entry in range(num_output_rows):
+        golden_result_2d[entry] = SA_be.scale_and_clip(golden_result_2d[entry])
+
+    error = 0
+    for output in range(num_output_rows):
+        for channel in range(channels):
+            if(result_arr_2d[output][channel] != golden_result_2d[output][channel]):
+                error = 1
+                print('ERROR: doesnt match correct output')
+
+    if(error == 0):
+        print('###### PASSED ######')
+    else:
+        print(f'Input:\n{test_mat_2d}')
+        print(f'Output:\n{result_arr_2d}')
+        print(f'Correct Output:\n{golden_result_2d}')
+
+    return error
+        
 def test_backend_cycle(options):
-    print('teehee')
+    num_failed = 0
+
+    # Small sizes
+    num_failed += make_test(0, 4, 4, 4, 32, False, 0, 0, 10, 30)
+    num_failed += make_test(1, 4, 4, 4, 8, True,   0, 0, 10, 30)
+    num_failed += make_test(2, 4, 4, 4, 8, False,  0, -10, 10, 30)
+    num_failed += make_test(3, 4, 4, 4, 8, True,   0, -10, 10, 30)
+
+    # Our sizes, no scaling needed
+    num_failed += make_test(4, 16, 16, 8, 8, False, 0, -128, 127, 270)
+    num_failed += make_test(5, 16, 16, 8, 8, True,  0, -128, 127, 270)
+    num_failed += make_test(6, 16, 16, 8, 8, False, 0, -128, 127, 270)
+    num_failed += make_test(7, 16, 16, 8, 8, True,  0, -128, 127, 270)
+
+    # Small sizes, scaling needed
+    num_failed += make_test(8, 4, 4, 4, 8, False, 4, -1000, 1000, 30)
+    num_failed += make_test(9, 4, 4, 4, 8, True,  4, -1000, 1000, 30)
+
+    # Large sizes, scaling needed
+    num_failed += make_test(8, 16, 16, 8, 8, False, 4, -1000, 1000, 270)
+    num_failed += make_test(9, 16, 16, 8, 8, True,  4, -1000, 1000, 270)
+
+    print(f'num_failed = {num_failed}')
+    
+
+    
 
 def test_backend(options):
     # TEST BACKEND
-    test_relu(options)
-    test_maxpool(options)
+    # test_relu(options)
+    # test_maxpool(options)
     test_backend_cycle(options)
     
 # Thanks gemini
