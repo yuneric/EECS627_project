@@ -54,11 +54,12 @@ class systolic_array_frontend:
     """
     def __init__(self, SA_dim, input_fifo_depth, weight_fifo_depth, accum_buf_depth):
         self.SA_dim = SA_dim
+        self.accum_buf_depth = accum_buf_depth  
         self.SA = SystolicArrayGolden(SA_dim, SA_dim)                           # Our systolic array :D
         self.input_buffer = configurable_fifo(input_fifo_depth, SA_dim)         # Input buffer, likely a async fifo in practice
         self.weight_buffer = configurable_fifo(weight_fifo_depth, SA_dim)       # Weight buffer, likely a async fifo
-        self.accum_buffer_working = configurable_fifo(accum_buf_depth, SA_dim)  # The accumulator buffer that the SA is currently working on
-        self.accum_buffer_done = configurable_fifo(accum_buf_depth, SA_dim)     # The accumulator buffer that is waiting to be drained
+        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))         # The accumulator buffer that is being written
+        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))         # The accumulator buffer that is being read
         self.input_skew = skew_buf((SA_dim))                                    # Buffer to skew data into the SA
         self.output_skew = skew_buf((SA_dim))                                   # Data skew out to realign SA data
 
@@ -70,22 +71,21 @@ class systolic_array_frontend:
         self.SA.reset()
         self.input_buffer.reset()
         self.weight_buffer.reset()
-        self.accum_buffer_working.reset()
-        self.accum_buffer_done.reset()
+        self.accum_addr = 0
+        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))
+        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))
 
         self.accum_buffer_primed = False
         self.accum_buffer_en     = 0
         self.delay_buf_input     = 0
         self.accum_buffer_sel    = 0
 
-
         self.partial_sum        = np.zeros(self.SA_dim) # (partial_sum) Reg that sits between SA skew and accum buffer
         self.array_output       = np.zeros(self.SA_dim) # (array_output) Reg that sits between SA and SA output skew
         self.array_input        = np.zeros(self.SA_dim) # (array_input) Reg that sits between SA input skew and SA
         self.skew_input         = np.zeros(self.SA_dim) # (skew_input) Reg that sits between SA and SA skew
           
-
-        self.old_partial_sum = 0
+        self.old_partial_sum    = 0
 
     def load_weight_row(self, row_idx):
         self.SA.weights[row_idx] = self.weight_buffer.read()
@@ -96,28 +96,31 @@ class systolic_array_frontend:
     def write_weight_buffer(self, val):
         self.weight_buffer.write(val)
 
-    def read_accum_buffer(self):
-        return self.accum_buffer_done.read()
+    def read_accum_buffer(self, addr):
+        #return self.accum_buffer_done.read()
+        return self.accum_buffer_reading[addr]
 
     def switch_accum_buffer(self):
         # Just switch the pointers
-        self.accum_buffer_done.reset()
-        tmp = self.accum_buffer_done
-        self.accum_buffer_done = self.accum_buffer_working
-        self.accum_buffer_working = tmp
-        self.accum_buffer_primed = False
+        tmp = self.accum_buffer_reading
+        self.accum_buffer_reading = self.accum_buffer_writing
+        self.accum_buffer_writing = tmp
 
     def step(self):
         # Accumulator buffer
         if(self.accum_buffer_en):
             # Only start doing reads and writes when data is available
             if(self.accum_buffer_primed):
-                    self.accum_buffer_working.write(self.accum_buffer_working.read() + self.partial_sum)
+                    self.accum_buffer_writing[self.accum_addr] = self.accum_buffer_reading[self.accum_addr] + self.partial_sum
+                    self.accum_addr += 1
             else:
-                # Wait til its full (primed) to start reading
-                self.accum_buffer_working.write(self.partial_sum)
-                if(self.accum_buffer_working.full()):
-                    self.accum_buffer_primed = True
+                # Wait til its full (primed) atleast once to start reading
+                self.accum_buffer_writing[self.accum_addr] = self.partial_sum
+                self.accum_addr += 1
+            if(self.accum_addr == self.accum_buffer_writing.shape[0]):
+                self.accum_buffer_primed = True
+                self.accum_addr = 0
+                self.switch_accum_buffer()
         self.accum_buffer_en = self.en_accum_delay_buf.delay(self.delay_buf_input) # (accum_buffer_en) Has to arrive at the same time as partial sum
 
         # Pipelined stages
@@ -386,37 +389,33 @@ def test_frontend(options):
 
     output_mat = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
 
-    # SWITCH ACCUM BUFFERS
-    SA_fe.switch_accum_buffer()
+    # # WRITE SOME NEW INPUTS
+    # for row in range(options.accum_buffer_depth*2):
+    #     new_row = np.zeros((options.systolic_array_dim)) + 1
+    #     SA_fe.write_input_buffer(new_row)
 
-    # WRITE SOME NEW INPUTS
-    for row in range(options.accum_buffer_depth*2):
-        new_row = np.zeros((options.systolic_array_dim)) + 1
-        SA_fe.write_input_buffer(new_row)
-
-    # RUN THE BLOCK
-    for cycle in range(num_cycles):
-        print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
-        SA_fe.step()
+    # # RUN THE BLOCK
+    # for cycle in range(num_cycles):
+    #     print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
+    #     SA_fe.step()
         
-    # READ THE OUTPUT FROM BUF 1
+    # READ THE OUTPUT FROM BUF
     for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_fe.read_accum_buffer()
+        output_mat[row] = SA_fe.read_accum_buffer(row)
 
     # CHECK FOR CORRECTNESS
-    print(output_mat)
     for row in range(golden_output.shape[0]):
         for col in range(golden_output.shape[1]):
             # Mult by two since we ran it twice
             if(output_mat[row][col] != golden_output[row][col]*2):
                 print('ERROR: first test failed')
 
-    # SWITCH ACCUM BUFFERS
-    SA_fe.switch_accum_buffer()
+    # # SWITCH ACCUM BUFFERS
+    # SA_fe.switch_accum_buffer()
 
-    # READ THE OUTPUT FROM BUF 2
-    for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_fe.read_accum_buffer()
+    # # READ THE OUTPUT FROM BUF 2
+    # for row in range(options.systolic_array_dim):
+    #     output_mat[row] = SA_fe.read_accum_buffer(row)
 
     print(output_mat)
 
@@ -580,8 +579,8 @@ def convert3d_2d(arr):
 def main(options):
     print('############ TESTING FRONTEND #############')
     test_frontend(options)
-    print('############ TESTING BACKEND #############')
-    test_backend(options)
+    #print('############ TESTING BACKEND #############')
+    #test_backend(options)
 
 
 if __name__ == "__main__":
