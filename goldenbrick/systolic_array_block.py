@@ -409,6 +409,9 @@ def test_frontend(options):
             # Mult by two since we ran it twice
             if(output_mat[row][col] != golden_output[row][col]*2):
                 print('ERROR: first test failed')
+    
+    print(SA_fe.accum_buffer_reading)
+    print(SA_fe.accum_buffer_writing)
 
     # # SWITCH ACCUM BUFFERS
     # SA_fe.switch_accum_buffer()
