@@ -134,6 +134,7 @@ class systolic_array_frontend:
             self.delay_buf_input = 0
             self.skew_input = np.zeros((self.SA_dim))
 
+# The post processing for the systolic array
 class systolic_array_backend:
     def __init__(self,  channels, output_val_bits, input_dim):
         self.channels = channels   # Number of channels in the input
@@ -147,22 +148,21 @@ class systolic_array_backend:
         self.reset()
 
     def reset(self):
-        self.relu_en = 0
-        self.shift_val = 0
+        self.relu_en    = 0
+        self.shift_val  = 0
         self.maxpool_en = 0
 
-        self.relu_input = np.zeros((self.channels))
+        self.relu_input        = np.zeros((self.channels))
         self.scale_clip_output = np.zeros((self.channels))
 
         # Setup maxpool
-        self.maxpool_output = np.zeros((self.channels))
-        self.maxpool_valid_out = 0
-        self.maxpool_ready_in = 0
-        self.valid_data_in = np.zeros((3))
+        self.maxpool_output     = np.zeros((self.channels))
+        self.maxpool_valid_out  = 0
+        self.valid_data_in      = np.zeros((3))
         self.reset_maxpool()
 
         # Output data buffer
-        self.write_addr = 0
+        self.wr_addr = 0
         self.output_sram = np.zeros((self.input_dim**2, self.channels))
 
     def reset_maxpool(self):
@@ -222,18 +222,48 @@ class systolic_array_backend:
     def disable_maxpool(self):
         self.maxpool_en = 0
 
-    def maxpool(self, input_word, valid_data=1):
+    def maxpool_step(self, input_word, valid_data=1):
         #print(f'input_pixel : {self.input_pixel} fill_input_line_buf: {self.fill_line_buf} | done_fill : {self.done_fill} | stream_output: {self.stream_output} |')
         output = input_word
-        valid_out = 0 # is the current output valid?
-
+        valid_out = 0 # is the current output data valid?
+        
         # Pass through if not enabled
         if(self.maxpool_en):
-            if(self.stream_output == 0):
-                if(self.done_fill == 0):
-                    if(valid_data == 0):
-                        # Do nothing
-                        return None, valid_out
+            # Supports filling buffers and exporting final buffer in the same step
+            output = None
+
+            # State machine for output
+            if(self.stream_output == 1):
+                # If maxpool is done, stream it out
+                output = self.output_line_buffer_final[self.stream_output_pixel]
+                valid_out = 1
+                self.stream_output_pixel += 1
+                if(self.stream_output_pixel == self.input_dim//2):
+                    #self.reset_maxpool()
+                    self.stream_output_pixel = 0
+                    self.stream_output = 0
+            # endif stream_output
+
+            # State machine for filling line buffers and eventual maxpool
+            if(self.done_fill == 1 and self.stream_output == 0):
+                # If done do the maxpool
+                for pixel in range(self.output_line_buffer0.shape[0]):
+                    for channel in range(self.channels):
+                        self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
+                        self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
+                        self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
+                self.stream_output = 1
+                self.done_fill = 0
+                # Can do the first pixel of the next row
+                if(valid_data == 1):
+                    self.input_line_buffer0[self.input_pixel] = input_word
+                    self.input_pixel += 1
+                    if(self.input_pixel == self.input_dim):
+                        self.input_pixel = 0
+                        self.fill_line_buf = 1
+            else:
+                # If not done filling the line buffers
+                if(valid_data == 1):
                     if(self.fill_line_buf == 0):
                         self.input_line_buffer0[self.input_pixel] = input_word
                         self.input_pixel += 1
@@ -247,58 +277,13 @@ class systolic_array_backend:
                             self.input_pixel = 0
                             self.fill_line_buf = 0
                             self.done_fill = 1
-                else:
-                    # Do the maxpool
-                    for pixel in range(self.output_line_buffer0.shape[0]):
-                        for channel in range(self.channels):
-                            self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
-                            self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
-                            self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
-                    self.stream_output = 1
-            else:
-                output = self.output_line_buffer_final[self.stream_output_pixel]
-                valid_out = 1
-                self.stream_output_pixel += 1
-                if(self.stream_output_pixel == self.input_dim//2):
-                    self.reset_maxpool()
+                    # endif fill_line_b_uf
+                # endif valid_data
+            # endif done_fill
+        #endif maxpool_en
+
         
         return output, valid_out
-    
-    # def maxpool(self, input_word):
-    #     #print(f'input_pixel : {self.input_pixel} fill_input_line_buf: {self.fill_line_buf} | done_fill : {self.done_fill} | stream_output: {self.stream_output} |')
-    #     output = input_word
-
-    #     # Pass through if not enabled
-    #     if(self.maxpool_en):
-    #         if(self.stream_output == 0):
-    #             if(self.done_fill == 0):
-    #                 if(self.fill_line_buf == 0):
-    #                     self.input_line_buffer0[self.input_pixel] = input_word
-    #                     self.input_pixel += 1
-    #                     if(self.input_pixel == self.input_dim):
-    #                         self.input_pixel = 0
-    #                         self.fill_line_buf = 1
-    #                 else:
-    #                     self.input_line_buffer1[self.input_pixel] = input_word
-    #                     self.input_pixel += 1
-    #                     if(self.input_pixel == self.input_dim):
-    #                         self.input_pixel = 0
-    #                         self.fill_line_buf = 0
-    #                         self.done_fill = 1
-    #             else:
-    #                 # Do the maxpool
-    #                 for pixel in range(self.output_line_buffer0.shape[0]):
-    #                     for channel in range(self.channels):
-    #                         self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
-    #                         self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
-    #                         self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
-    #                 self.stream_output = 1
-    #         else:
-    #             output = self.output_line_buffer_final[self.stream_output_pixel]
-    #             self.stream_output_pixel += 1
-    #             if(self.stream_output_pixel == self.input_dim//2):
-    #                 self.reset_maxpool()
-    #     return output
 
     # For testing purposes
     def run_maxpool(self, arr):
@@ -308,22 +293,29 @@ class systolic_array_backend:
         output_pixels_per_group = self.input_dim//2
         groups = self.input_dim//2
 
+        output_idx = 0
         output_arr = np.zeros((num_output_rows, self.channels))
 
         for group in range(groups):
-            # Load in self.input_dim*2 inputs
+            # Load in self.input_dim*2 inputs (step self.input_dim*2 times)
             for input_num in range(num_inputs_for_maxpool):
-                #self.maxpool(arr[input_num + group*num_inputs_for_maxpool])
-                self.maxpool(arr[input_num + group*num_inputs_for_maxpool], 1)
+                # Output data is only valid when valid_out is high
+                output_data, valid_out = self.maxpool_step(arr[input_num + group*num_inputs_for_maxpool], 1)
+                if(valid_out == 1):
+                    output_arr[output_idx] = output_data
+                    output_idx += 1
 
-            # Calculation step
-            #self.maxpool(None)
-            self.maxpool(None, 0)
+        # Calculation step ( to actually perform maxpool on the last set of data)
+        self.maxpool_step(None, 0)
 
-            # Now we will have self.input_dim//2 outputs
-            for output in range(output_pixels_per_group):
-                # output_arr[output + group*output_pixels_per_group] = self.maxpool(None)
-                output_arr[output + group*output_pixels_per_group], tmp = self.maxpool(None, 0)
+        # Get the rest of the data
+        for pixel in range(output_pixels_per_group):
+            output_data, valid_out = self.maxpool_step(None, 0)
+            if(valid_out == 1):
+                output_arr[output_idx] = output_data
+                output_idx += 1
+
+            
         
         return output_arr
 
@@ -339,7 +331,7 @@ class systolic_array_backend:
         
         # Maxpool
         self.valid_data_in[2] = self.valid_data_in[1]
-        self.maxpool_output, self.maxpool_valid_out = self.maxpool(scale_clip_output, self.maxpool_valid_data_in[2])
+        self.maxpool_output, self.maxpool_valid_out = self.maxpool_step(scale_clip_output, self.maxpool_valid_data_in[2])
         
         # Scale and Clip
         self.valid_data_in[1] = self.valid_data_in[0]
@@ -419,9 +411,7 @@ def test_frontend(options):
 
     print(f'Output: \n {output_mat}')
 
-def test_backend(options):
-    
-    # TEST BACKEND
+def test_relu(options):
     # TEST RELU, SCALING AND SHIFTING
     SA_be = systolic_array_backend(8, 8, 8)
 
@@ -444,6 +434,7 @@ def test_backend(options):
     print(test)
     print(SA_be.scale_and_clip(test))
 
+def test_maxpool(options):
     # TEST MAXPOOL
     # TEST 1
     SA_be = systolic_array_backend(4, 8, 2)
@@ -461,20 +452,20 @@ def test_backend(options):
     print('testing passthrough')
     output = np.zeros((4,4))
     for row in range(test_arr.shape[0]):
-        output[row], tmp = SA_be.maxpool(test_arr[row])
+        output[row], tmp = SA_be.maxpool_step(test_arr[row])
     
     print(f'input:\n{test_arr}')
     print(f'output:\n{output}')
 
     # test maxpool 2x2x4 -> 1x1x4
-    print('testing 2x2x4 -> 1x1x4')
+    print('testing 1 2x2x4 -> 1x1x4')
     SA_be.enable_maxpool()
     result = SA_be.run_maxpool(test_arr)
     print(f'result:\n{result}')
 
     # TEST 2
     # test maxpool 4x4x4 -> 2x2x4
-    print('testing 4x4x4 -> 2x2x4')
+    print('testing 2 4x4x4 -> 2x2x4')
     SA_be = systolic_array_backend(4, 8, 4)
     SA_be.enable_maxpool()
     test_arr = np.array([[0,  5, 2, 1],
@@ -502,6 +493,7 @@ def test_backend(options):
     print(f'result:\n{result}')
 
     # TEST 3
+    print('testing 3 4x4x4 -> 2x2x4')
     rows = 4
     cols = 4
     channels = 4
@@ -527,6 +519,7 @@ def test_backend(options):
                 print('ERROR: doesnt match correct output')
 
     # TEST 4
+    print('testing 4 16x16x8 -> 8x8x16')
     rows = 16
     cols = 16
     channels = 8
@@ -551,7 +544,14 @@ def test_backend(options):
             if(result[row][channel] != golden_result_transformed[row][channel]):
                 print('ERROR: doesnt match correct output')
 
+def test_backend_cycle(options):
+    print('teehee')
 
+def test_backend(options):
+    # TEST BACKEND
+    test_relu(options)
+    test_maxpool(options)
+    test_backend_cycle(options)
     
 # Thanks gemini
 def maxpool2d(input_array):
@@ -571,16 +571,17 @@ def maxpool2d(input_array):
     # Take the max across the 2nd and 4th axes (the 2x2 blocks)
     return reshaped.max(axis=(1, 3))
 
+# Use this to convert our mats from 3D H*W*C format to 2D HWC format
+# Basically every channel (filter output) becomes its own column
 def convert3d_2d(arr):
     rows, cols, channels = arr.shape
     return arr.reshape(rows*cols, channels)
     
-
 def main(options):
     print('############ TESTING FRONTEND #############')
     test_frontend(options)
-    #print('############ TESTING BACKEND #############')
-    #test_backend(options)
+    print('############ TESTING BACKEND ##############')
+    test_backend(options)
 
 
 if __name__ == "__main__":
