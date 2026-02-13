@@ -48,7 +48,7 @@ class skew_buf:
         return output_col
 
 # Systolic array with the buffering we desire so deeply
-class systolic_array_buffered:
+class systolic_array_frontend:
     """
     Cycle-Accurate Weight-Stationary Model with delay and weight loading
     """
@@ -131,9 +131,223 @@ class systolic_array_buffered:
             self.delay_buf_input = 0
             self.skew_input = np.zeros((self.SA_dim))
 
-        
+class systolic_array_backend:
+    def __init__(self,  channels, output_val_bits, input_dim):
+        self.channels = channels   # Number of channels in the input
+        self.input_dim = input_dim # H/W of input matrices in each channel
 
-def main(options):
+        # Assuming twos complement
+        self.output_val_bits = output_val_bits # Number of bits that should be in the output
+        self.output_upper_bound = 2**(output_val_bits-1) - 1
+        self.output_lower_bound = -(2**(output_val_bits-1))
+
+        self.reset()
+
+    def reset(self):
+        self.relu_en = 0
+        self.shift_val = 0
+        self.maxpool_en = 0
+
+        self.relu_input = np.zeros((self.channels))
+        self.scale_clip_output = np.zeros((self.channels))
+
+        # Setup maxpool
+        self.maxpool_output = np.zeros((self.channels))
+        self.maxpool_valid_out = 0
+        self.maxpool_ready_in = 0
+        self.valid_data_in = np.zeros((3))
+        self.reset_maxpool()
+
+        # Output data buffer
+        self.write_addr = 0
+        self.output_sram = np.zeros((self.input_dim**2, self.channels))
+
+    def reset_maxpool(self):
+        self.input_pixel = 0
+        self.fill_line_buf = 0
+        self.done_fill = 0
+        self.stream_output = 0
+        self.stream_output_pixel = 0
+        self.input_line_buffer0 = np.zeros((self.input_dim, self.channels))
+        self.input_line_buffer1 = np.zeros((self.input_dim, self.channels))
+        self.output_line_buffer0 = np.zeros((self.input_dim//2, self.channels))
+        self.output_line_buffer1 = np.zeros((self.input_dim//2, self.channels))
+        self.output_line_buffer_final = np.zeros((self.input_dim//2, self.channels))
+
+    # Sets the window of the output that we want
+    def set_window(self, shift_val):
+        self.shift_val = shift_val
+
+    def relu(self, word):
+        output = word
+        # Pass through if not enabled
+        if(self.relu_en):
+            output = np.zeros((self.channels))
+            for idx in range(self.channels):
+                if(word[idx] < 0):
+                    output[idx] = 0
+                else:
+                    output[idx] = word[idx]
+        return output
+
+    # Scales the value to the window then clamps the output
+    def scale_and_clip(self, input_word):
+        output = np.zeros((self.channels))
+        for idx in range(self.channels):
+            # Scale
+            big_val = input_word[idx]
+            truncated_val = (int(big_val) >> self.shift_val)
+
+            # Clip
+            out_val = truncated_val
+            if(truncated_val > self.output_upper_bound):
+                out_val = self.output_upper_bound
+            elif(truncated_val < self.output_lower_bound):
+                out_val = self.output_lower_bound
+            output[idx] = out_val
+        return output
+
+    # RELU!!!!!!!!!!!!!
+    def enable_relu(self):
+        self.relu_en = 1
+    
+    # Support k = 2, s = 2 maxpool
+    def enable_maxpool(self):
+        self.reset()
+        self.maxpool_en = 1
+
+    def disable_maxpool(self):
+        self.maxpool_en = 0
+
+    def maxpool(self, input_word, valid_data=1):
+        #print(f'input_pixel : {self.input_pixel} fill_input_line_buf: {self.fill_line_buf} | done_fill : {self.done_fill} | stream_output: {self.stream_output} |')
+        output = input_word
+        valid_out = 0 # is the current output valid?
+
+        # Pass through if not enabled
+        if(self.maxpool_en):
+            if(self.stream_output == 0):
+                if(self.done_fill == 0):
+                    if(valid_data == 0):
+                        # Do nothing
+                        return None, valid_out
+                    if(self.fill_line_buf == 0):
+                        self.input_line_buffer0[self.input_pixel] = input_word
+                        self.input_pixel += 1
+                        if(self.input_pixel == self.input_dim):
+                            self.input_pixel = 0
+                            self.fill_line_buf = 1
+                    else:
+                        self.input_line_buffer1[self.input_pixel] = input_word
+                        self.input_pixel += 1
+                        if(self.input_pixel == self.input_dim):
+                            self.input_pixel = 0
+                            self.fill_line_buf = 0
+                            self.done_fill = 1
+                else:
+                    # Do the maxpool
+                    for pixel in range(self.output_line_buffer0.shape[0]):
+                        for channel in range(self.channels):
+                            self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
+                            self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
+                            self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
+                    self.stream_output = 1
+            else:
+                output = self.output_line_buffer_final[self.stream_output_pixel]
+                valid_out = 1
+                self.stream_output_pixel += 1
+                if(self.stream_output_pixel == self.input_dim//2):
+                    self.reset_maxpool()
+        
+        return output, valid_out
+    
+    # def maxpool(self, input_word):
+    #     #print(f'input_pixel : {self.input_pixel} fill_input_line_buf: {self.fill_line_buf} | done_fill : {self.done_fill} | stream_output: {self.stream_output} |')
+    #     output = input_word
+
+    #     # Pass through if not enabled
+    #     if(self.maxpool_en):
+    #         if(self.stream_output == 0):
+    #             if(self.done_fill == 0):
+    #                 if(self.fill_line_buf == 0):
+    #                     self.input_line_buffer0[self.input_pixel] = input_word
+    #                     self.input_pixel += 1
+    #                     if(self.input_pixel == self.input_dim):
+    #                         self.input_pixel = 0
+    #                         self.fill_line_buf = 1
+    #                 else:
+    #                     self.input_line_buffer1[self.input_pixel] = input_word
+    #                     self.input_pixel += 1
+    #                     if(self.input_pixel == self.input_dim):
+    #                         self.input_pixel = 0
+    #                         self.fill_line_buf = 0
+    #                         self.done_fill = 1
+    #             else:
+    #                 # Do the maxpool
+    #                 for pixel in range(self.output_line_buffer0.shape[0]):
+    #                     for channel in range(self.channels):
+    #                         self.output_line_buffer0[pixel][channel] = max(self.input_line_buffer0[pixel*2][channel], self.input_line_buffer0[(pixel*2)+1][channel])
+    #                         self.output_line_buffer1[pixel][channel] = max(self.input_line_buffer1[pixel*2][channel], self.input_line_buffer1[(pixel*2)+1][channel])
+    #                         self.output_line_buffer_final[pixel][channel] = max(self.output_line_buffer0[pixel][channel], self.output_line_buffer1[pixel][channel])
+    #                 self.stream_output = 1
+    #         else:
+    #             output = self.output_line_buffer_final[self.stream_output_pixel]
+    #             self.stream_output_pixel += 1
+    #             if(self.stream_output_pixel == self.input_dim//2):
+    #                 self.reset_maxpool()
+    #     return output
+
+    # For testing purposes
+    def run_maxpool(self, arr):
+        row_length = self.input_dim
+        num_inputs_for_maxpool = self.input_dim * 2
+        num_output_rows = (self.input_dim//2)**2
+        output_pixels_per_group = self.input_dim//2
+        groups = self.input_dim//2
+
+        output_arr = np.zeros((num_output_rows, self.channels))
+
+        for group in range(groups):
+            # Load in self.input_dim*2 inputs
+            for input_num in range(num_inputs_for_maxpool):
+                #self.maxpool(arr[input_num + group*num_inputs_for_maxpool])
+                self.maxpool(arr[input_num + group*num_inputs_for_maxpool], 1)
+
+            # Calculation step
+            #self.maxpool(None)
+            self.maxpool(None, 0)
+
+            # Now we will have self.input_dim//2 outputs
+            for output in range(output_pixels_per_group):
+                # output_arr[output + group*output_pixels_per_group] = self.maxpool(None)
+                output_arr[output + group*output_pixels_per_group], tmp = self.maxpool(None, 0)
+        
+        return output_arr
+
+    def read_output_sram(self, addr):
+        return self.output_sram[addr]
+    
+    def step(input_word, input_valid):
+        # Pipeline
+        # Output SRAM
+        if(self.maxpool_valid_out == 1):
+            self.output_sram[write_addr] = self.maxpool_output
+            write_addr += 1
+        
+        # Maxpool
+        self.valid_data_in[2] = self.valid_data_in[1]
+        self.maxpool_output, self.maxpool_valid_out = self.maxpool(scale_clip_output, self.maxpool_valid_data_in[2])
+        
+        # Scale and Clip
+        self.valid_data_in[1] = self.valid_data_in[0]
+        self.scale_clip_output = self.scale_and_clip(relu_output)
+        
+        # Relu
+        self.valid_data_in[0] = input_valid
+        self.relu_output = self.relu(input_word)
+
+def test_frontend(options):
+    # TEST FRONTEND
     # INITIALIZE
     test_inputs = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
     for row in range(test_inputs.shape[0]):
@@ -141,16 +355,16 @@ def main(options):
     test_weights =  np.zeros((options.systolic_array_dim, options.systolic_array_dim)) + 1
     golden_output = np.matmul(test_inputs, test_weights)
 
-    SA_dut = systolic_array_buffered(options.systolic_array_dim, options.input_buffer_depth, options.weight_buffer_depth, options.accum_buffer_depth)
-    SA_dut.reset()
+    SA_fe = systolic_array_frontend(options.systolic_array_dim, options.input_buffer_depth, options.weight_buffer_depth, options.accum_buffer_depth)
+    SA_fe.reset()
 
     # WRITE THE WEIGHT BUFFER
     for row in range(options.systolic_array_dim):
-        SA_dut.write_weight_buffer(copy.deepcopy(test_weights[row]))
+        SA_fe.write_weight_buffer(copy.deepcopy(test_weights[row]))
 
     # LOAD THE WEIGHTS INTO THE ARRAY
     for row in range(options.systolic_array_dim):
-        SA_dut.load_weight_row(row)
+        SA_fe.load_weight_row(row)
 
     # NUM CYCLES TO RUN
     num_cycles = 50
@@ -158,36 +372,36 @@ def main(options):
     # LOAD SOME DATA TWICE
     for data_idx in range(options.systolic_array_dim):
         new_row = test_inputs[data_idx]
-        SA_dut.write_input_buffer(new_row)
+        SA_fe.write_input_buffer(new_row)
 
     for data_idx in range(options.systolic_array_dim):
         new_row = test_inputs[data_idx]
-        SA_dut.write_input_buffer(new_row)
+        SA_fe.write_input_buffer(new_row)
 
     # RUN THE BLOCK
     print('cycle | skew_input | array_input | array_output | accum_buffer_en | partial_sum')
     for cycle in range(num_cycles):
-        print(f'{cycle} | {SA_dut.skew_input} | {SA_dut.array_input} | {SA_dut.array_output} | {SA_dut.accum_buffer_en} | {SA_dut.partial_sum}')
-        SA_dut.step()
+        print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
+        SA_fe.step()
 
     output_mat = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
 
     # SWITCH ACCUM BUFFERS
-    SA_dut.switch_accum_buffer()
+    SA_fe.switch_accum_buffer()
 
     # WRITE SOME NEW INPUTS
     for row in range(options.accum_buffer_depth*2):
         new_row = np.zeros((options.systolic_array_dim)) + 1
-        SA_dut.write_input_buffer(new_row)
+        SA_fe.write_input_buffer(new_row)
 
     # RUN THE BLOCK
     for cycle in range(num_cycles):
-        print(f'{cycle} | {SA_dut.skew_input} | {SA_dut.array_input} | {SA_dut.array_output} | {SA_dut.accum_buffer_en} | {SA_dut.partial_sum}')
-        SA_dut.step()
+        print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
+        SA_fe.step()
         
     # READ THE OUTPUT FROM BUF 1
     for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_dut.read_accum_buffer()
+        output_mat[row] = SA_fe.read_accum_buffer()
 
     # CHECK FOR CORRECTNESS
     print(output_mat)
@@ -198,15 +412,176 @@ def main(options):
                 print('ERROR: first test failed')
 
     # SWITCH ACCUM BUFFERS
-    SA_dut.switch_accum_buffer()
+    SA_fe.switch_accum_buffer()
 
     # READ THE OUTPUT FROM BUF 2
     for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_dut.read_accum_buffer()
+        output_mat[row] = SA_fe.read_accum_buffer()
 
     print(output_mat)
+
+def test_backend(options):
+    
+    # TEST BACKEND
+    # TEST RELU, SCALING AND SHIFTING
+    SA_be = systolic_array_backend(8, 8, 8)
+
+    test = np.zeros(8) + 256
+    print(test)
+    print(SA_be.relu(test))
+    print(SA_be.scale_and_clip(test))
+
+    test = np.zeros(8) - 256
+    print(test)
+    print(SA_be.relu(test))
+    print(SA_be.scale_and_clip(test))
+
+    SA_be.set_window(4)
+    test = np.zeros(8) + 256
+    print(test)
+    print(SA_be.scale_and_clip(test))
+
+    test = np.zeros(8) - 256
+    print(test)
+    print(SA_be.scale_and_clip(test))
+
+    # TEST MAXPOOL
+    # TEST 1
+    SA_be = systolic_array_backend(4, 8, 2)
+    # each row is a pixel in the flattened output
+    # each col is a channel of output
+    # 2x2x4 input
+    test_arr = np.array([[1, 1, 1, 1],
+                         [2, 2, 2, 2],
+                         [3, 3, 3, 3],
+                         [4, 4, 4, 4]])
+    # 1x1x4 output
+    correct_output = np.array([4, 4, 4, 4])
+
+    # test pass through
+    print('testing passthrough')
+    output = np.zeros((4,4))
+    for row in range(test_arr.shape[0]):
+        output[row], tmp = SA_be.maxpool(test_arr[row])
+    
+    print(f'input:\n{test_arr}')
+    print(f'output:\n{output}')
+
+    # test maxpool 2x2x4 -> 1x1x4
+    print('testing 2x2x4 -> 1x1x4')
+    SA_be.enable_maxpool()
+    result = SA_be.run_maxpool(test_arr)
+    print(f'result:\n{result}')
+
+    # TEST 2
+    # test maxpool 4x4x4 -> 2x2x4
+    print('testing 4x4x4 -> 2x2x4')
+    SA_be = systolic_array_backend(4, 8, 4)
+    SA_be.enable_maxpool()
+    test_arr = np.array([[0,  5, 2, 1],
+                         [1, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [2, -1, 2, 1],
+                         [0,  6, 2, 1],
+                         [3,  7, 2, 1],
+                         [0,  6, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [0, -1, 2, 1],
+                         [4,  8, 2, 1]])
+    correct_output = np.array([ [1, 5, 2, 1],
+                                [2, 6, 2, 1],
+                                [3, 7, 2, 1],
+                                [4, 8, 2, 1]])
+    result = SA_be.run_maxpool(test_arr)
+    print(f'input:\n{test_arr}')
+    print(f'result:\n{result}')
+
+    # TEST 3
+    rows = 4
+    cols = 4
+    channels = 4
+    test_mat = np.random.randint(0, 10, (rows, cols, channels))
+
+    golden_result = np.zeros((rows//2, cols//2, channels))
+    for channel in range(channels):
+        golden_result[:, :, channel] = maxpool2d(test_mat[:, :, channel])
+    golden_result_transformed = convert3d_2d(golden_result)
+
+    SA_be = systolic_array_backend(channels, 8, rows)
+    transformed_mat = convert3d_2d(test_mat)
+    SA_be.enable_maxpool()
+    result = SA_be.run_maxpool(transformed_mat)
+
+    # print(test_mat)
+    # print(transformed_mat)
+    # print(golden_result_transformed)
+    # print(result)
+    for row in range(rows*cols//4):
+        for channel in range(channels):
+            if(result[row][channel] != golden_result_transformed[row][channel]):
+                print('ERROR: doesnt match correct output')
+
+    # TEST 4
+    rows = 16
+    cols = 16
+    channels = 8
+    test_mat = np.random.randint(0, 10, (rows, cols, channels))
+
+    golden_result = np.zeros((rows//2, cols//2, channels))
+    for channel in range(channels):
+        golden_result[:, :, channel] = maxpool2d(test_mat[:, :, channel])
+    golden_result_transformed = convert3d_2d(golden_result)
+
+    SA_be = systolic_array_backend(channels, 8, rows)
+    transformed_mat = convert3d_2d(test_mat)
+    SA_be.enable_maxpool()
+    result = SA_be.run_maxpool(transformed_mat)
+
+    # print(test_mat)
+    # print(transformed_mat)
+    # print(golden_result_transformed)
+    # print(result)
+    for row in range(rows*cols//4):
+        for channel in range(channels):
+            if(result[row][channel] != golden_result_transformed[row][channel]):
+                print('ERROR: doesnt match correct output')
+
+
+    
+# Thanks gemini
+def maxpool2d(input_array):
+    """
+    Performs a 2x2 maxpool with stride 2 on a 2D NumPy array.
+    """
+    h, w = input_array.shape
+    
+    # Ensure dimensions are even for a 2x2/s=2 pool
+    # If odd, you'd typically pad or crop the array
+    h_out, w_out = h // 2, w // 2
+    
+    # Reshape into (h_out, 2, w_out, 2)
+    # This groups every 2x2 block into its own dimensions
+    reshaped = input_array[:h_out*2, :w_out*2].reshape(h_out, 2, w_out, 2)
+    
+    # Take the max across the 2nd and 4th axes (the 2x2 blocks)
+    return reshaped.max(axis=(1, 3))
+
+def convert3d_2d(arr):
+    rows, cols, channels = arr.shape
+    return arr.reshape(rows*cols, channels)
     
 
+def main(options):
+    print('############ TESTING FRONTEND #############')
+    test_frontend(options)
+    print('############ TESTING BACKEND #############')
+    test_backend(options)
 
 
 if __name__ == "__main__":
@@ -216,10 +591,10 @@ if __name__ == "__main__":
                         description='goldenbrick for the systolic array blocks',
                         epilog='teehee')
 
-    parser.add_argument('-sa_dim', '--systolic_array_dim', type=int, default=4) 
-    parser.add_argument('-in_buf', '--input_buffer_depth', type=int, default=4) 
-    parser.add_argument('-w_buf', '--weight_buffer_depth', type=int, default=4) 
-    parser.add_argument('-acc_buf', '--accum_buffer_depth', type=int, default=4) 
+    parser.add_argument('-sa_dim', '--systolic_array_dim', type=int, default=8) 
+    parser.add_argument('-in_buf', '--input_buffer_depth', type=int, default=16) 
+    parser.add_argument('-w_buf', '--weight_buffer_depth', type=int, default=16) 
+    parser.add_argument('-acc_buf', '--accum_buffer_depth', type=int, default=8) 
 
 
     options = parser.parse_args()
