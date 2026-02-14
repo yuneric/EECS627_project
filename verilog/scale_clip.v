@@ -15,7 +15,7 @@ module scale_clip #(
 
     genvar i;
     generate
-        for (i = 0; i < ARRAY_SIZE; i = i + 1) begin : scale_channel
+        for (i = 0; i < ARRAY_SIZE; i = i + 1) begin : s
             wire signed [PSUM_WIDTH-1:0] psum;
             assign psum = psum_in_vec[i*PSUM_WIDTH +: PSUM_WIDTH];
 
