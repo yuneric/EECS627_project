@@ -7,8 +7,8 @@ import copy
 # The post processing for the systolic array
 class systolic_array_backend:
     def __init__(self,  channels, output_val_bits, input_dim):
-        self.channels = channels   # Number of channels in the input
-        self.input_dim = input_dim # H/W of input matrices in each channel
+        self.channels = channels   # Number of channels in the input (word_width)
+        self.input_dim = input_dim # H/W of input matrices in each channel (H*W = accumulator buffer depth)
 
         # Assuming twos complement
         self.output_val_bits = output_val_bits # Number of bits that should be in the output

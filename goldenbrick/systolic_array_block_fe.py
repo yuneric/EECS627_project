@@ -54,7 +54,7 @@ class systolic_array_frontend:
     """
     def __init__(self, SA_dim, input_fifo_depth, weight_fifo_depth, accum_buf_depth):
         self.SA_dim = SA_dim
-        self.accum_buf_depth = accum_buf_depth  
+        self.accum_buf_depth = accum_buf_depth  # Must be atleast equal to SA_dim
         self.SA = SystolicArrayGolden(SA_dim, SA_dim)                           # Our systolic array :D
 
         self.input_buffer = configurable_fifo(input_fifo_depth, SA_dim)         # Input data buffer, likely an async fifo in practice
