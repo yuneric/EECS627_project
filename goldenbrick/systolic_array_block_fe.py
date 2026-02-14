@@ -11,7 +11,10 @@ from accum_buf import configurable_fifo
 class delay_buf:
     def __init__(self, max_delay):
         self.size = max_delay
-        self.delay_buf = np.zeros((max_delay))
+        self.reset()
+
+    def reset(self):
+        self.delay_buf = np.zeros((self.size))
 
     def delay(self, val):
         output = self.delay_buf[-1]
@@ -23,8 +26,11 @@ class delay_buf:
 class skew_buf:
     def __init__(self, max_delay):
         self.size = max_delay
-        self.delay_buf = np.zeros((max_delay, max_delay))
+        self.reset()
 
+    def reset(self):
+        self.delay_buf = np.zeros((self.size, self.size))
+        
     def skew(self, input_col):
         output_col = np.zeros((self.size))
         for idx in range(self.size):
@@ -50,48 +56,61 @@ class systolic_array_frontend:
         self.SA_dim = SA_dim
         self.accum_buf_depth = accum_buf_depth  
         self.SA = SystolicArrayGolden(SA_dim, SA_dim)                           # Our systolic array :D
-        self.input_buffer = configurable_fifo(input_fifo_depth, SA_dim)         # Input buffer, likely a async fifo in practice
-        self.weight_buffer = configurable_fifo(weight_fifo_depth, SA_dim)       # Weight buffer, likely a async fifo
-        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))         # The accumulator buffer that is being written
-        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))         # The accumulator buffer that is being read
+
+        self.input_buffer = configurable_fifo(input_fifo_depth, SA_dim)         # Input data buffer, likely an async fifo in practice
+        self.input_final_buffer = configurable_fifo(input_fifo_depth, 1)        # For each piece of data in the input data buffer, indicate if its the last piece of data, likely an async fifo
+        self.weight_buffer = configurable_fifo(weight_fifo_depth, SA_dim)       # Weight buffer, likely an async fifo
+
+        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))    # The accumulator buffer that is being written
+        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))    # The accumulator buffer that is being read
+
         self.input_skew = skew_buf((SA_dim))                                    # Buffer to skew data into the SA
         self.output_skew = skew_buf((SA_dim))                                   # Data skew out to realign SA data
 
-        self.en_accum_delay_buf = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))    # Need this so that the accumulator buffer only enables when theres actually data
+        self.en_accum_delay = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))    # Need this to delay input so that the accumulator buffer only enables when theres actually data
+        self.final_data_delay = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))  # Need this to delay input so accumulator buffer knows when the calculation is complete and the last piece of data is processed
 
         self.reset()
 
     def reset(self):
         self.SA.reset()
         self.input_buffer.reset()
+        self.input_final_buffer.reset()
         self.weight_buffer.reset()
-        self.accum_addr = 0
-        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))
-        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))
 
-        self.accum_buffer_primed = False
-        self.accum_buffer_en     = 0
-        self.delay_buf_input     = 0
-        self.accum_buffer_sel    = 0
+        self.input_skew.reset()
+        self.output_skew.reset()
+
+        self.accum_addr             = 0
+        self.accum_buffer_en        = 0
+        self.accum_buffer_sel       = 0
+        self.accum_buffer_primed    = False
+
+        self.en_accum_delay_input   = 0
+        self.en_accum_delay.reset()
+
+
+        self.final_data             = 0
+        self.final_data_delay_input = 0
+        self.final_data_delay.reset()
+
 
         self.partial_sum        = np.zeros(self.SA_dim) # (partial_sum) Reg that sits between SA skew and accum buffer
         self.array_output       = np.zeros(self.SA_dim) # (array_output) Reg that sits between SA and SA output skew
         self.array_input        = np.zeros(self.SA_dim) # (array_input) Reg that sits between SA input skew and SA
         self.skew_input         = np.zeros(self.SA_dim) # (skew_input) Reg that sits between SA and SA skew
-          
-        self.old_partial_sum    = 0
 
     def load_weight_row(self, row_idx):
         self.SA.weights[row_idx] = self.weight_buffer.read()
 
-    def write_input_buffer(self, val):
+    def write_input_buffer(self, val, final_data):
         self.input_buffer.write(val)
+        self.input_final_buffer.write(final_data)
 
     def write_weight_buffer(self, val):
         self.weight_buffer.write(val)
 
     def read_accum_buffer(self, addr):
-        #return self.accum_buffer_done.read()
         return self.accum_buffer_reading[addr]
 
     def switch_accum_buffer(self):
@@ -101,32 +120,49 @@ class systolic_array_frontend:
         self.accum_buffer_writing = tmp
 
     def step(self):
+        self.done = 0
+        
         # Accumulator buffer
+        # Only start doing reads and writes when valid data is available
         if(self.accum_buffer_en):
-            # Only start doing reads and writes when data is available
             if(self.accum_buffer_primed):
-                    self.accum_buffer_writing[self.accum_addr] = self.accum_buffer_reading[self.accum_addr] + self.partial_sum
-                    self.accum_addr += 1
+                # Once its primed, Read AND write SRAMs in a ping pong manner
+                self.accum_buffer_writing[self.accum_addr] = self.accum_buffer_reading[self.accum_addr] + self.partial_sum
+                self.accum_addr += 1
             else:
-                # Wait til its full (primed) atleast once to start reading
+                # Write til the first buffer is full (primed)
                 self.accum_buffer_writing[self.accum_addr] = self.partial_sum
                 self.accum_addr += 1
-            if(self.accum_addr == self.accum_buffer_writing.shape[0]):
+
+            if(self.final_data == 1):
+                # If this is the last piece of data, reset
+                self.accum_buffer_primed = False
+                self.accum_addr = 0
+                self.switch_accum_buffer()
+                self.done = 1
+            elif(self.accum_addr == self.accum_buffer_writing.shape[0]):
+                # If its not, reset control for the next round of data
                 self.accum_buffer_primed = True
                 self.accum_addr = 0
                 self.switch_accum_buffer()
-        self.accum_buffer_en = self.en_accum_delay_buf.delay(self.delay_buf_input) # (accum_buffer_en) Has to arrive at the same time as partial sum
+
+        self.accum_buffer_en = self.en_accum_delay.delay(self.en_accum_delay_input) # (accum_buffer_en) Has to arrive at the same time as partial sum
+        self.final_data = self.final_data_delay.delay(self.final_data_delay_input) # (final_data) last piece of data signal, has to arrive at the same time as partial sum
 
         # Pipelined stages
         self.partial_sum = self.output_skew.skew_alt(self.array_output) # output data skew realignment
         self.array_output = self.SA.step(self.array_input)              # systolic array
         self.array_input = self.input_skew.skew(self.skew_input)        # input data skew
         if(not self.input_buffer.empty()):                              # input buffer data
-            self.delay_buf_input = 1
+            self.en_accum_delay_input = 1
             self.skew_input = self.input_buffer.read()
+            self.final_data_delay_input = self.input_final_buffer.read()
         else:
-            self.delay_buf_input = 0
+            self.en_accum_delay_input = 0
+            self.final_data_delay_input = 0
             self.skew_input = np.zeros((self.SA_dim))
+        
+        return self.done
 
 def test_frontend(options):
     # TEST FRONTEND
@@ -138,7 +174,6 @@ def test_frontend(options):
     golden_output = np.matmul(test_inputs, test_weights)
 
     SA_fe = systolic_array_frontend(options.systolic_array_dim, options.input_buffer_depth, options.weight_buffer_depth, options.accum_buffer_depth)
-    SA_fe.reset()
 
     # WRITE THE WEIGHT BUFFER
     for row in range(options.systolic_array_dim):
@@ -148,35 +183,28 @@ def test_frontend(options):
     for row in range(options.systolic_array_dim):
         SA_fe.load_weight_row(row)
 
-    # NUM CYCLES TO RUN
-    num_cycles = 50
-
     # LOAD SOME DATA TWICE
     for data_idx in range(options.systolic_array_dim):
         new_row = test_inputs[data_idx]
-        SA_fe.write_input_buffer(new_row)
+        SA_fe.write_input_buffer(new_row, 0)
 
-    for data_idx in range(options.systolic_array_dim):
+    for data_idx in range(options.systolic_array_dim - 1):
         new_row = test_inputs[data_idx]
-        SA_fe.write_input_buffer(new_row)
+        SA_fe.write_input_buffer(new_row, 0)
+
+    SA_fe.write_input_buffer(test_inputs[options.systolic_array_dim - 1], 1)
 
     # RUN THE BLOCK
     print('cycle | skew_input | array_input | array_output | accum_buffer_en | partial_sum')
-    for cycle in range(num_cycles):
+    done = 0
+    data_idx = 0
+    cycle = 0
+    while(done == 0):
         print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
-        SA_fe.step()
+        done = SA_fe.step()
+        cycle += 1
 
     output_mat = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
-
-    # # WRITE SOME NEW INPUTS
-    # for row in range(options.accum_buffer_depth*2):
-    #     new_row = np.zeros((options.systolic_array_dim)) + 1
-    #     SA_fe.write_input_buffer(new_row)
-
-    # # RUN THE BLOCK
-    # for cycle in range(num_cycles):
-    #     print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
-    #     SA_fe.step()
         
     # READ THE OUTPUT FROM BUF
     for row in range(options.systolic_array_dim):
@@ -188,13 +216,6 @@ def test_frontend(options):
             # Mult by two since we ran it twice
             if(output_mat[row][col] != golden_output[row][col]*2):
                 print('ERROR: first test failed')
-
-    # # SWITCH ACCUM BUFFERS
-    # SA_fe.switch_accum_buffer()
-
-    # # READ THE OUTPUT FROM BUF 2
-    # for row in range(options.systolic_array_dim):
-    #     output_mat[row] = SA_fe.read_accum_buffer(row)
 
     print(f'Output: \n {output_mat}')
     
