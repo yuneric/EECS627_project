@@ -1,29 +1,22 @@
 module relu #(
-    parameter ARRAY_SIZE = 4,
-    parameter PSUM_WIDTH = 32
+    parameter DIM = 4,
+    parameter BIT_WIDTH = 32
 )(
-    input wire signed [PSUM_WIDTH*ARRAY_SIZE-1:0] psum_in_vec,
-    input wire en, // enable signal to disable the relu if needed
-    output wire signed [PSUM_WIDTH*ARRAY_SIZE-1:0] relu_out_vec 
+    input  wire                     enable,
+    input  wire [DIM*BIT_WIDTH-1:0] data_in,
+    output reg  [DIM*BIT_WIDTH-1:0] data_out
 );
-    // parameter alpha_shift = 5
-    genvar i;
-    generate
-        for (i = 0; i < ARRAY_SIZE; i = i + 1) begin : BOUNDARY_ASSIGN
-            wire signed [PSUM_WIDTH-1:0] psum_in;
-            wire signed [PSUM_WIDTH-1:0] relu_out;
-            
-            assign psum_in = psum_in_vec[i*PSUM_WIDTH +: PSUM_WIDTH];
-            // if we do leaky relu its just not put to 0 instead its just multiplied by a small number
-            // assign relu_out = (psum_in[PSUM_WIDTH-1]) ? (psum_in >>>> alpha_shift) : psum_in;
-            
-            // check the msb since its signed to see if 1 (negative) or 0
-            assign relu_out = en ? ((psum_in[PSUM_WIDTH-1]) ? {PSUM_WIDTH{1'b0}} : psum_in) : psum_in;
-            
-            // Pack output
-            assign relu_out_vec[i*PSUM_WIDTH +: PSUM_WIDTH] = relu_out;
+    integer i;
+    reg signed [BIT_WIDTH-1:0] val;
+
+    always @(*) begin
+        for (i = 0; i < DIM; i = i + 1) begin
+            val = data_in[(i+1)*BIT_WIDTH-1 : i*BIT_WIDTH];
+            if (enable && val < 0) begin
+                data_out[(i+1)*BIT_WIDTH-1 : i*BIT_WIDTH] = 0;
+            end else begin
+                data_out[(i+1)*BIT_WIDTH-1 : i*BIT_WIDTH] = val;
+            end
         end
-    endgenerate
-
-
+    end
 endmodule
