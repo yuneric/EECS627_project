@@ -4,278 +4,245 @@ import sys
 import os
 import copy
 
-from systolic_array import SystolicArrayGolden
-from accum_buf import configurable_fifo
-
-# Delay buffer for a signal
-class delay_buf:
-    def __init__(self, max_delay):
-        self.size = max_delay
-        self.reset()
-
-    def reset(self):
-        self.delay_buf = np.zeros((self.size))
-
-    def delay(self, val):
-        output = self.delay_buf[-1]
-        self.delay_buf[1:] = self.delay_buf[:-1]
-        self.delay_buf[0] = val
-        return output
-
-# Skew buffer for systolic array
-class skew_buf:
-    def __init__(self, max_delay):
-        self.size = max_delay
-        self.reset()
-
-    def reset(self):
-        self.delay_buf = np.zeros((self.size, self.size))
-        
-    def skew(self, input_col):
-        output_col = np.zeros((self.size))
-        for idx in range(self.size):
-            output_col[idx] = self.delay_buf[idx][idx]
-        self.delay_buf[:, 1:] = self.delay_buf[:, :-1]
-        self.delay_buf[:, 0] = input_col
-        return output_col
-
-    def skew_alt(self, input_col):
-        output_col = np.zeros((self.size))
-        for idx in range(self.size):
-            output_col[idx] = self.delay_buf[self.size - 1 - idx][idx]
-        self.delay_buf[:, 1:] = self.delay_buf[:, :-1]
-        self.delay_buf[:, 0] = input_col
-        return output_col
+from systolic_array import SystolicArraySkewed
+from fifo import configurable_fifo
+from delay import delay_buf, skew_buf, serializer
 
 # Systolic array with the buffering we desire so deeply
 class systolic_array_frontend:
     """
-    Cycle-Accurate Weight-Stationary Model with delay and weight loading
+    Cycle-Accurate output stationary with fifos
     """
-    def __init__(self, SA_dim, input_fifo_depth, weight_fifo_depth, accum_buf_depth):
-        self.SA_dim = SA_dim
-        self.accum_buf_depth = accum_buf_depth  # Must be atleast equal to SA_dim
-        self.SA = SystolicArrayGolden(SA_dim, SA_dim)                           # Our systolic array :D
+    def __init__(self, dim, fifo_depth):
+        self.dim = dim
+        self.fifo_depth = fifo_depth
+        self.array = SystolicArraySkewed(self.dim)                           # Our systolic array :D
 
-        self.input_buffer = configurable_fifo(input_fifo_depth, SA_dim)         # Input data buffer, likely an async fifo in practice
-        self.input_final_buffer = configurable_fifo(input_fifo_depth, 1)        # For each piece of data in the input data buffer, indicate if its the last piece of data, likely an async fifo
-        self.weight_buffer = configurable_fifo(weight_fifo_depth, SA_dim)       # Weight buffer, likely an async fifo
+        self.data_info_fifo = configurable_fifo(self.fifo_depth, 1)
+        self.act_fifo = configurable_fifo(self.fifo_depth, self.dim)
+        self.weight_fifo = configurable_fifo(self.fifo_depth, self.dim)
 
-        self.accum_buffer_writing = np.zeros((self.accum_buf_depth, self.SA_dim))    # The accumulator buffer that is being written
-        self.accum_buffer_reading = np.zeros((self.accum_buf_depth, self.SA_dim))    # The accumulator buffer that is being read
+        self.act_serial_staged = []
+        self.weight_serial_staged = []
+        self.act_serializers = []
+        self.weight_serializers = []
+        for row in range(self.dim):
+            self.act_serial_staged.append(np.zeros(self.dim))
+            self.weight_serial_staged.append(np.zeros(self.dim))
 
-        self.input_skew = skew_buf((SA_dim))                                    # Buffer to skew data into the SA
-        self.output_skew = skew_buf((SA_dim))                                   # Data skew out to realign SA data
-
-        self.en_accum_delay = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))    # Need this to delay input so that the accumulator buffer only enables when theres actually data
-        self.final_data_delay = delay_buf((1 + 2 + self.SA_dim + self.SA_dim))  # Need this to delay input so accumulator buffer knows when the calculation is complete and the last piece of data is processed
+            self.act_serializers.append(serializer(self.dim))
+            self.weight_serializers.append(serializer(self.dim))
 
         self.reset()
 
     def reset(self):
-        self.SA.reset()
-        self.input_buffer.reset()
-        self.input_final_buffer.reset()
-        self.weight_buffer.reset()
+        self.act_fifo.reset()
+        self.weight_fifo.reset()
+        for row in range(self.dim):
+            self.act_serializers[row].reset()
+            self.weight_serializers[row].reset()
 
-        self.input_skew.reset()
-        self.output_skew.reset()
-
-        self.accum_addr             = 0
-        self.accum_buffer_en        = 0
-        self.accum_buffer_sel       = 0
-        self.accum_buffer_primed    = False
-
-        self.en_accum_delay_input   = 0
-        self.en_accum_delay.reset()
+        self.serializer_sel = 0
+        self.data_cycles = self.dim
+        self.data_staged = False
+        self.flush_data = False
+        self.output_cycles = 0
 
 
-        self.final_data             = 0
-        self.final_data_delay_input = 0
-        self.final_data_delay.reset()
+        self.needed_calc_cycles = 1 + 2 + self.dim * 2
+        self.cycles_since_last_data = 0
+        self.computation_done = False
 
+        self.act_input = np.zeros(self.dim)
+        self.weight_input = np.zeros(self.dim)
 
-        self.partial_sum        = np.zeros(self.SA_dim) # (partial_sum) Reg that sits between SA skew and accum buffer
-        self.array_output       = np.zeros(self.SA_dim) # (array_output) Reg that sits between SA and SA output skew
-        self.array_input        = np.zeros(self.SA_dim) # (array_input) Reg that sits between SA input skew and SA
-        self.skew_input         = np.zeros(self.SA_dim) # (skew_input) Reg that sits between SA and SA skew
-
-    # Load a row of weights (need to fix this so that it can do it on its own)
-    def load_weight_row(self, row_idx):
-        self.SA.weights[row_idx] = self.weight_buffer.read()
-
-    # Writes data to the input buffer
-    def write_input_buffer(self, data, final_data):
-        # Write the data alongside whether or not its the final data
-        self.input_buffer.write(data)
-        self.input_final_buffer.write(final_data)
-
-    # Writes to the weight fifo
-    def write_weight_buffer(self, data):
-        self.weight_buffer.write(data)
-
-    # Method to get data out of the accum buffer
-    def read_accum_buffer(self, addr):
-        return self.accum_buffer_reading[addr]
-
-    # Switch which buffer is being read/written
-    def switch_accum_buffer(self):
-        # Just switch the pointers
-        tmp = self.accum_buffer_reading
-        self.accum_buffer_reading = self.accum_buffer_writing
-        self.accum_buffer_writing = tmp
+    def write_fifos(self, act_data, weight_data, data_info):
+        self.act_fifo.write(act_data)
+        self.weight_fifo.write(weight_data)
+        self.data_info_fifo.write(data_info)
 
     # SIMULATES A SINGLE CYCLE
     def step(self):
-        self.done = 0
         
-        # Accumulator buffer
-        # Only start doing reads and writes when valid data is available
-        if(self.accum_buffer_en):
-            if(self.accum_buffer_primed):
-                # Once its primed, Read AND write SRAMs in a ping pong manner
-                self.accum_buffer_writing[self.accum_addr] = self.accum_buffer_reading[self.accum_addr] + self.partial_sum
-                self.accum_addr += 1
-            else:
-                # Write til the first buffer is full (primed)
-                self.accum_buffer_writing[self.accum_addr] = self.partial_sum
-                self.accum_addr += 1
-
-            if(self.final_data == 1):
-                # If this is the last piece of data, reset
-                self.accum_buffer_primed = False
-                self.accum_addr = 0
-                self.switch_accum_buffer()
-                self.done = 1
-            elif(self.accum_addr == self.accum_buffer_writing.shape[0]):
-                # If its not, reset control for the next round of data
-                self.accum_buffer_primed = True
-                self.accum_addr = 0
-                self.switch_accum_buffer()
-
-        # Delayed control signals
-        self.accum_buffer_en = self.en_accum_delay.delay(self.en_accum_delay_input) # (accum_buffer_en) Has to arrive at the same time as partial sum
-        self.final_data = self.final_data_delay.delay(self.final_data_delay_input) # (final_data) last piece of data signal, has to arrive at the same time as partial sum
-
-        # Pipelined stages
-        self.partial_sum = self.output_skew.skew_alt(self.array_output) # output data skew realignment
-        self.array_output = self.SA.step(self.array_input)              # systolic array
-        self.array_input = self.input_skew.skew(self.skew_input)        # input data skew
-        
-        # Needs some special logic for the input stage
-        if(not self.input_buffer.empty()):                              # input buffer data
-            self.en_accum_delay_input = 1 # We have a piece of real data! :)
-            self.skew_input = self.input_buffer.read()
-            self.final_data_delay_input = self.input_final_buffer.read()
+        valid_out = 0
+        if((self.flush_data) and (self.data_staged == 0) and (self.data_cycles == self.dim) and (self.computation_done)):
+            print('streaming output from array')
+            output = self.array.step(self.act_input, self.weight_input, shift_out=1)
+            valid_out = (self.output_cycles >= 1)
+            self.output_cycles += 1
+            if(self.output_cycles == self.dim + 1):
+                self.output_cycles = 0
+                self.flush_data = False
         else:
-            self.en_accum_delay_input = 0 # Data isn't real :(
-            self.skew_input = np.zeros((self.SA_dim))
-            self.final_data_delay_input = 0
+            print('normal array function')
+            output = self.array.step(self.act_input, self.weight_input, shift_out=0)
+
+        # Need to know when the last bit of data is through
+        if(not self.data_staged and (self.data_cycles == self.dim)):
+            self.cycles_since_last_data += 1
+            if(self.cycles_since_last_data >= self.needed_calc_cycles):
+                self.computation_done = True
+        else:
+            self.cycles_since_last_data = 0
+            self.computation_done = False
+
+        # Serializer logic
+        if(self.data_staged and (self.data_cycles == self.dim)):
+            print('staged data, loading it into serializers')
+            # If the serializers are about to be empty and we have staged data, load it
+            for row in range(self.dim):
+                self.act_input[row] = self.act_serializers[row].step(shift=1, input_data=self.act_serial_staged[row], data_valid=1)
+                self.weight_input[row] = self.weight_serializers[row].step(shift=1, input_data=self.weight_serial_staged[row], data_valid=1)
+            self.data_staged = False # Data is not staged anymore
+            self.data_cycles = 0     # Reset our data counter
+
+        elif(not self.data_staged and (self.data_cycles == self.dim)):
+            print('no data')
+            # We have no data
+            for row in range(self.dim):
+                self.act_input[row] = 0
+                self.weight_input[row] = 0
+            
+        else:
+            # Otherwise shift data out as normal and count how much data has been shifted out
+            print('shifting out')
+            if(self.data_cycles < self.dim):
+                self.data_cycles += 1
+                for row in range(self.dim):
+                    self.act_input[row] = self.act_serializers[row].step(shift=1, input_data=None, data_valid=0)
+                    self.weight_input[row] = self.weight_serializers[row].step(shift=1, input_data=None, data_valid=0)
         
-        return self.done
-
-def test_frontend(options):
-    # TEST FRONTEND
-    # INITIALIZE
-    test_inputs = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
-    for row in range(test_inputs.shape[0]):
-        test_inputs[row][:] = row + 1
-    test_weights =  np.zeros((options.systolic_array_dim, options.systolic_array_dim)) + 1
-    golden_output = np.matmul(test_inputs, test_weights)
-
-    SA_fe = systolic_array_frontend(options.systolic_array_dim, options.input_buffer_depth, options.weight_buffer_depth, options.accum_buffer_depth)
-
-    # WRITE THE WEIGHT BUFFER
-    for row in range(options.systolic_array_dim):
-        SA_fe.write_weight_buffer(copy.deepcopy(test_weights[row]))
-
-    # LOAD THE WEIGHTS INTO THE ARRAY
-    for row in range(options.systolic_array_dim):
-        SA_fe.load_weight_row(row)
-
-    # LOAD SOME DATA TWICE
-    for data_idx in range(options.systolic_array_dim):
-        new_row = test_inputs[data_idx]
-        SA_fe.write_input_buffer(new_row, 0)
-
-    for data_idx in range(options.systolic_array_dim - 1):
-        new_row = test_inputs[data_idx]
-        SA_fe.write_input_buffer(new_row, 0)
-
-    # indicate last data
-    SA_fe.write_input_buffer(test_inputs[options.systolic_array_dim - 1], 1)
-
-    # RUN THE BLOCK
-    print('cycle | skew_input | array_input | array_output | accum_buffer_en | partial_sum')
-    done = 0
-    cycle = 0
-    while(done == 0):
-        print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
-        done = SA_fe.step()
-        cycle += 1
-
-    output_mat = np.zeros((options.systolic_array_dim, options.systolic_array_dim))
+        # Data staging logic
+        if((not self.act_fifo.empty()) and (not self.data_staged) and (not self.flush_data)):
+            # Puts the data into our staging buffers for the serializers to keep them fed
+            # Stop reading data if we need to flush
+            print('staging data')
+            self.act_serial_staged[self.serializer_sel] = copy.deepcopy(self.act_fifo.read())
+            self.weight_serial_staged[self.serializer_sel] = copy.deepcopy(self.weight_fifo.read())
+            # If we have staged every row of data, reset for the next round
+            self.serializer_sel += 1
+            if(self.serializer_sel == self.dim):
+                self.data_staged = True
+                self.serializer_sel = 0
+            # This determines if this is the last piece of data before we flush
+            self.flush_data = self.data_info_fifo.read()[0]
+        else:
+            # No ready data
+            print('no ready data')
+            #self.flush_data = 0
         
-    # READ THE OUTPUT FROM BUF
-    for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_fe.read_accum_buffer(row)
+        return output, valid_out
 
-    # CHECK FOR CORRECTNESS
-    error = 0
-    for row in range(golden_output.shape[0]):
-        for col in range(golden_output.shape[1]):
-            # Mult by two since we ran it twice
-            if(output_mat[row][col] != golden_output[row][col]*2):
-                error += 1
-                print('ERROR: first test failed')
-
-    # LOAD A BUNCH OF DATA WHILE WE RUN
-    last_time = 8
-    time = 0
-    done = 0
-    stop_loading_data = 0
-    while(done == 0):
-        print(f'{cycle} | {SA_fe.skew_input} | {SA_fe.array_input} | {SA_fe.array_output} | {SA_fe.accum_buffer_en} | {SA_fe.partial_sum}')
-        if((cycle % 8 == 0) and (stop_loading_data == 0)):
-            if(time == last_time - 1):
-                # load data
-                for data_idx in range(options.systolic_array_dim - 1):
-                    new_row = test_inputs[data_idx]
-                    SA_fe.write_input_buffer(new_row, 0)
-                # load last data
-                SA_fe.write_input_buffer(test_inputs[options.systolic_array_dim - 1], 1)
-                stop_loading_data = 1
-            else:
-                # load data
-                for data_idx in range(options.systolic_array_dim):
-                    new_row = test_inputs[data_idx]
-                    SA_fe.write_input_buffer(new_row, 0)
-            time += 1
-        done = SA_fe.step()
-        cycle += 1
-
-    # READ THE OUTPUT FROM BUF
-    for row in range(options.systolic_array_dim):
-        output_mat[row] = SA_fe.read_accum_buffer(row)
-
-    # CHECK FOR CORRECTNESS
-    error = 0
-    for row in range(golden_output.shape[0]):
-        for col in range(golden_output.shape[1]):
-            # Mult by two since we ran it twice
-            if(output_mat[row][col] != golden_output[row][col]*8):
-                error += 1
-                print('ERROR: first test failed')
-
-    if(error == 0):
-        print("PASSED!!!!!!!")
-
-    print(f'Output: \n {output_mat}')
+def make_test(activations, weights, dim, fifo_depth, num_cycles=50):
+    dut = systolic_array_frontend(dim, fifo_depth)
+    print(f'Activations:\n{activations}')
+    print(f'Weights:\n{weights}')
     
+    data_idx = 0
+    output_idx = 0
+    output_arr = np.zeros((dim, dim))
+    #print('cycle | left_input | top_input | dut.act_input | dut.weight_input | dut.flush_data | dut.data_staged')
+    # print('sums')
+    for cycle in range(num_cycles):
+        left_input = np.zeros(dim)
+        top_input = np.zeros(dim)
+        data_info = False
+        data, valid = dut.step()
+        if(data_idx < dim and (not dut.act_fifo.full())):
+            #print('WRITINGGGGGGGGGGG')
+            left_input = activations[data_idx, :]
+            top_input = weights[:, data_idx]
+            data_idx += 1
+            if(data_idx == dim):
+                data_info = True
+                #print('WRITINGGGGGGGGGGG LAST')
+            dut.write_fifos(left_input, top_input, data_info)
+        # print(f'{cycle} | {left_input} | {top_input} | {dut.act_input} | {dut.weight_input} | {dut.flush_data} | {dut.data_staged} | {dut.act_serial_staged} | {dut.weight_serial_staged}')
+        # print(f'{cycle} | {left_input} | {top_input} | {dut.array.left_in} | {dut.array.top_in} | {dut.flush_data} | {dut.data_cycles} | {dut.output_cycles} | {dut.cycles_since_last_data} | {dut.needed_calc_cycles} | {dut.computation_done}')
+        # print(dut.array.array.sum_v)
+        if(valid == 1):
+            output_arr[dim - 1 - output_idx] = data
+            output_idx +=1
+
+    # Check output
+    golden_result = np.matmul(activations, weights)
+    num_outputs = dim
+    for row in range(num_outputs):
+        for col in range(num_outputs):
+            if(output_arr[row][col] != golden_result[row][col]):
+                print("ERROR: Systolic array output doesn't match a matmult")
+    print(f'Result:\n{output_arr}')
+    print(f'Correct:\n{golden_result}')
+    
+# def make_tile_test(activations, weights, dim, fifo_depth, num_cycles=50):
+#     dut = systolic_array_frontend(dim, fifo_depth)
+#     act_shape = actications.shape
+#     weight_shape = weights.shape
+#     zero_padding_needed = act_shape[1] % dim
+#     print(f'Activations:\n{activations}')
+#     print(f'Weights:\n{weights}')
+    
+#     data_idx = 0
+#     output_idx = 0
+#     output_arr = np.zeros((dim, dim))
+#     #print('cycle | left_input | top_input | dut.act_input | dut.weight_input | dut.flush_data | dut.data_staged')
+#     # print('sums')
+#     for cycle in range(num_cycles):
+#         left_input = np.zeros(dim)
+#         top_input = np.zeros(dim)
+#         data_info = False
+#         data, valid = dut.step()
+#         if(data_idx < dim and (not dut.act_fifo.full())):
+#             print('WRITINGGGGGGGGGGG')
+#             left_input = activations[data_idx, :]
+#             top_input = weights[:, data_idx]
+#             data_idx += 1
+#             if(data_idx == dim):
+#                 data_info = True
+#                 print('WRITINGGGGGGGGGGG LAST')
+#             dut.write_fifos(left_input, top_input, data_info)
+#         # print(f'{cycle} | {left_input} | {top_input} | {dut.act_input} | {dut.weight_input} | {dut.flush_data} | {dut.data_staged} | {dut.act_serial_staged} | {dut.weight_serial_staged}')
+#         # print(f'{cycle} | {left_input} | {top_input} | {dut.array.left_in} | {dut.array.top_in} | {dut.flush_data} | {dut.data_cycles} | {dut.output_cycles} | {dut.cycles_since_last_data} | {dut.needed_calc_cycles} | {dut.computation_done}')
+#         # print(dut.array.array.sum_v)
+#         if(valid == 1):
+#             output_arr[dim - 1 - output_idx] = data
+#             output_idx +=1
+
+#     # Check output
+#     golden_result = np.matmul(activations, weights)
+#     num_outputs = dim
+#     for row in range(num_outputs):
+#         for col in range(num_outputs):
+#             if(output_arr[row][col] != golden_result[row][col]):
+#                 print("ERROR: Systolic array output doesn't match a matmult")
+#     print(f'Result:\n{output_arr}')
+#     print(f'Correct:\n{golden_result}')
+
 def main(options):
     print('############ TESTING FRONTEND #############')
-    test_frontend(options)
+    dim = 4
+    fifo_depth = 4
+    activations = np.array([[1, 1, 1, 1],
+                            [2, 2, 2, 2],
+                            [3, 3, 3, 3],
+                            [4, 4, 4, 4]])
+    weights = np.array([[1, 1, 1, 1],
+                        [2, 2, 2, 2],
+                        [3, 3, 3, 3],
+                        [4, 4, 4, 4]])
+    make_test(activations, weights, dim, fifo_depth)
 
+    dim = 4
+    fifo_depth = 4
+    activations = np.random.randint(-4, 4, size=(dim, dim))     
+    weights = np.random.randint(-4, 4, size=(dim, dim))
+    make_test(activations, weights, dim, fifo_depth)
+
+    dim = 8
+    fifo_depth = 2
+    activations = np.random.randint(-4, 4, size=(dim, dim))     
+    weights = np.random.randint(-4, 4, size=(dim, dim))
+    make_test(activations, weights, dim, fifo_depth)
 
 if __name__ == "__main__":
 
@@ -284,10 +251,9 @@ if __name__ == "__main__":
                         description='goldenbrick for the systolic array block frontend',
                         epilog='teehee')
 
-    parser.add_argument('-sa_dim', '--systolic_array_dim', type=int, default=8) 
-    parser.add_argument('-in_buf', '--input_buffer_depth', type=int, default=16) 
-    parser.add_argument('-w_buf', '--weight_buffer_depth', type=int, default=16) 
-    parser.add_argument('-acc_buf', '--accum_buffer_depth', type=int, default=8) 
+    parser.add_argument('-sa_dim', '--systolic_array_dim', type=int, default=4) 
+    parser.add_argument('-in_buf', '--fifo_depth', type=int, default=4) 
+
 
 
     options = parser.parse_args()
