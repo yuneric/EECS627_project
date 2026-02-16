@@ -19,19 +19,23 @@ module systolic_array #(
 );
 
     // Interconnects
+    // act flows from left to right
     wire signed [DATA_WIDTH-1:0] act_wires [ARRAY_SIZE:0][ARRAY_SIZE:0];
+
+    // weight flows north to south
     wire signed [DATA_WIDTH-1:0] weight_wires [ARRAY_SIZE:0][ARRAY_SIZE:0];
-    wire signed [PSUM_WIDTH-1:0] psum_wires [ARRAY_SIZE:0][ARRAY_SIZE:0];
+
+    wire signed [PSUM_WIDTH-1:0] psum_wires [0:ARRAY_SIZE-1][0:ARRAY_SIZE-1];
     wire [ARRAY_SIZE*ARRAY_SIZE-1:0] pe_out_valid;
 
     genvar i, j;
     generate
         for (i = 0; i < ARRAY_SIZE; i = i + 1) begin : BOUNDARY_ASSIGN
             // Activations
-            assign act_wires[i][0] = act_in_vec[(i+1)*DATA_WIDTH-1 : i*DATA_WIDTH];
+            assign act_wires[i][0] = act_in_vec[i*DATA_WIDTH +: DATA_WIDTH];
             
             // Weights
-            assign weight_wires[0][i] = weight_in_vec[(i+1)*DATA_WIDTH-1 : i*DATA_WIDTH];
+            assign weight_wires[0][i] = weight_in_vec[i*DATA_WIDTH +: DATA_WIDTH];
             
             // Top Inputs 
             assign psum_wires[0][i] = {PSUM_WIDTH{1'b0}};
