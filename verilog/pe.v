@@ -34,7 +34,7 @@ module pe#(
     reg signed [(DATA_WIDTH - 1):0] act_reg;
     // reg signed done_reg; // when the calculation for all the activations cycles are done?
 
-    assign mac_result = (act_reg * weight_reg);
+    assign mac_result = act_reg * weight_reg;
     assign out_valid = drain; 
 
     // got this from discussion slide
@@ -45,15 +45,12 @@ module pe#(
             act_reg <= {DATA_WIDTH{1'b0}};
         end
         else begin
-            // start a new accumulation cycle
-            weight_reg <= weight_in;            
+            weight_reg <= weight_in;
             act_reg <= act_in;
-            if (clear) psum_reg <= {PSUM_WIDTH{1'b0}};
-            // only accumulate when controller enables?
-            else if (compute_en) begin
-                // previous stored psum is added to the current cycle psum
+            if (clear)
+                psum_reg <= {PSUM_WIDTH{1'b0}};
+            else if (compute_en)
                 psum_reg <= psum_reg + mac_result;
-            end
         end
     end
 
