@@ -1,64 +1,42 @@
-module pe#(
-    parameter DATA_WIDTH  = 8,
-    parameter PSUM_WIDTH  = 16 
+module pe #(
+    parameter DATA_WIDTH = 8,
+    parameter ACC_WIDTH = 32
 )(
-    input wire                              clk,
-    input wire                              rst_n,
-    //input wire weight_load,                         //when we are in weight load phase?
-    //input wire signed [(PSUM_WIDTH - 1):0] psum_in,        //psum coming from the top pe
-    input wire signed [(DATA_WIDTH - 1):0] act_in,         //activation flowing from the left 
-    input wire signed [(DATA_WIDTH - 1):0] weight_in,      //get weight from north pe
-
-    // Accumulator control
-    input  wire  clear,  // start a new output
-    input  wire  compute_en, //accumulate this cycle
-    input  wire  drain,  //final psum
-
-    //output wire signed [(PSUM_WIDTH - 1):0] psum_out,      //psum -> below pe (for weight stationary)
-    output wire signed [(DATA_WIDTH - 1):0] weight_out, //weight passed to the bottom
-    output wire signed [(DATA_WIDTH - 1):0] act_out,  //activations are passed to the right
+    input  wire                   clk,
+    input  wire                   rst_n,
+    input  wire                   flush,      // 1 = Drain, 0 = Compute
+    input  wire [DATA_WIDTH-1:0]  left_in,
+    input  wire [DATA_WIDTH-1:0]  top_in,
     
-    //final output
-    output wire signed [(PSUM_WIDTH - 1):0] psum_out,
-    output wire out_valid // signal assert when the computation across all the cycles is done
-
+    output reg  [DATA_WIDTH-1:0]  right_out,
+    output reg  [ACC_WIDTH-1:0]   bottom_out
 );
 
-    // since we are just doing 8*8 bits multiply
-    wire signed [(2*DATA_WIDTH-1):0] mac_result;
+    reg signed [ACC_WIDTH-1:0] accumulator;
+    wire signed [DATA_WIDTH-1:0] s_left_in;
+    wire signed [DATA_WIDTH-1:0] s_top_in;
 
-    // two's complement
-    reg signed [(PSUM_WIDTH - 1):0] psum_reg; //psum reg
-    // psum_reg holds hte current computation and hte final_out reg is the final after all the cycles are done
-    reg signed [(DATA_WIDTH - 1):0] weight_reg;  //weight reg
-    reg signed [(DATA_WIDTH - 1):0] act_reg;
-    // reg signed done_reg; // when the calculation for all the activations cycles are done?
+    assign s_left_in = left_in;
+    assign s_top_in = top_in;
 
-    assign mac_result = (act_reg * weight_reg);
-    assign out_valid = drain; 
-
-    // got this from discussion slide
     always @(posedge clk or negedge rst_n) begin
-        if(!rst_n) begin
-            psum_reg <= {PSUM_WIDTH{1'b0}};
-            weight_reg <= {DATA_WIDTH{1'b0}};
-            act_reg <= {DATA_WIDTH{1'b0}};
-        end
-        else begin
-            // start a new accumulation cycle
-            weight_reg <= weight_in;            
-            act_reg <= act_in;
-            if (clear) psum_reg <= {PSUM_WIDTH{1'b0}};
-            // only accumulate when controller enables?
-            else if (compute_en) begin
-                // previous stored psum is added to the current cycle psum
-                psum_reg <= psum_reg + mac_result;
+        if (!rst_n) begin
+            accumulator <= 0;
+            right_out   <= 0;
+            bottom_out  <= 0;
+        end else begin
+            // Pass activation to the right
+            right_out <= left_in;
+
+            if (flush) begin
+                // Drain
+                bottom_out  <= accumulator;
+                accumulator <= 0; 
+            end else begin
+                bottom_out <= {{ (ACC_WIDTH-DATA_WIDTH){top_in[DATA_WIDTH-1]} }, top_in}; 
+                
+                accumulator <= accumulator + (s_left_in * s_top_in);
             end
         end
     end
-
-    assign psum_out = psum_reg;
-    assign act_out = act_reg;
-    assign weight_out = weight_reg;
-
 endmodule
