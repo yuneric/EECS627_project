@@ -1,48 +1,33 @@
 module scale_clip #(
-    parameter DIM = 4,
-    parameter IN_WIDTH = 32,
-    parameter OUT_WIDTH = 8
+    parameter ARRAY_SIZE = 4,
+    parameter PSUM_WIDTH = 32,
+    parameter OUTPUT_WIDTH = 8, //int8
+    parameter SHIFT_WIDTH = 5
 )(
-    input  wire                    clk,
-    input  wire                    rst_n,
-    input  wire [3:0]              shift_amt,
-    input  wire [DIM*IN_WIDTH-1:0] data_in,
-    input  wire                    valid_in,
-    
-    output reg  [DIM*OUT_WIDTH-1:0] data_out,
-    output reg                      valid_out
+    input wire [SHIFT_WIDTH-1:0] shift_by,
+    input  wire signed [PSUM_WIDTH*ARRAY_SIZE-1:0] psum_in_vec,
+    output wire signed [OUTPUT_WIDTH*ARRAY_SIZE-1:0] scaled_vec
 );
 
-    integer i;
-    reg signed [IN_WIDTH-1:0]  val;
-    reg signed [IN_WIDTH-1:0]  shifted_val;
-    
-    // Constants for clipping
-    localparam MAX_VAL = 127;
-    localparam MIN_VAL = -128;
+    localparam signed [OUTPUT_WIDTH-1:0] UPPER = 'd127;
+    // upper and lower range for a int8 numebr
+    localparam signed [OUTPUT_WIDTH-1:0] LOWER = -128;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            data_out <= 0;
-            valid_out <= 0;
-        end else begin
-            valid_out <= valid_in;
-            
-            for (i = 0; i < DIM; i = i + 1) begin
-                // Extract
-                val = data_in[(i+1)*IN_WIDTH-1 : i*IN_WIDTH];
-                
-                // Scale
-                shifted_val = val >>> shift_amt;
+    genvar i;
+    generate
+        for (i = 0; i < ARRAY_SIZE; i = i + 1) begin : s
+            wire signed [PSUM_WIDTH-1:0] psum;
+            assign psum = psum_in_vec[i*PSUM_WIDTH +: PSUM_WIDTH];
 
-                // Clip
-                if (shifted_val > MAX_VAL) 
-                    data_out[(i+1)*OUT_WIDTH-1 : i*OUT_WIDTH] <= MAX_VAL;
-                else if (shifted_val < MIN_VAL) 
-                    data_out[(i+1)*OUT_WIDTH-1 : i*OUT_WIDTH] <= MIN_VAL;
-                else 
-                    data_out[(i+1)*OUT_WIDTH-1 : i*OUT_WIDTH] <= shifted_val[OUT_WIDTH-1:0];
-            end
+            wire signed [PSUM_WIDTH-1:0] after_shift;
+            // 
+            assign after_shift = psum >> shift_by;
+
+            wire signed [OUTPUT_WIDTH-1:0] final_shift_check;
+            // if higher than upper then use upper and vice vccers
+            assign final_shift_check = (after_shift > UPPER) ? UPPER : (after_shift < LOWER) ? LOWER : after_shift[OUTPUT_WIDTH-1:0];
+            assign scaled_vec[i*OUTPUT_WIDTH +: OUTPUT_WIDTH] = final_shift_check;
         end
-    end
+    endgenerate
+
 endmodule
