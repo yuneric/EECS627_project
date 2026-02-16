@@ -1,6 +1,6 @@
 module pe#(
     parameter DATA_WIDTH  = 8,
-    parameter PSUM_WIDTH  = 32 
+    parameter PSUM_WIDTH  = 16 
 )(
     input wire                              clk,
     input wire                              rst_n,
@@ -11,7 +11,7 @@ module pe#(
 
     // Accumulator control
     input  wire  clear,  // start a new output
-    input  wire  acc_en, //accumulate this cycle
+    input  wire  compute_en, //accumulate this cycle
     input  wire  drain,  //final psum
 
     //output wire signed [(PSUM_WIDTH - 1):0] psum_out,      //psum -> below pe (for weight stationary)
@@ -19,22 +19,23 @@ module pe#(
     output wire signed [(DATA_WIDTH - 1):0] act_out,  //activations are passed to the right
     
     //final output
-    output wire signed [(PSUM_WIDTH - 1):0] final_out
+    output wire signed [(PSUM_WIDTH - 1):0] psum_out,
+    output wire out_valid // signal assert when the computation across all the cycles is done
 
 );
 
-    wire signed [(PSUM_WIDTH-1):0] mac_result;
+    // since we are just doing 8*8 bits multiply
+    wire signed [(2*DATA_WIDTH-1):0] mac_result;
 
     // two's complement
-    reg signed [(PSUM_WIDTH - 1):0] psum_reg, final_out_reg; //psum reg
+    reg signed [(PSUM_WIDTH - 1):0] psum_reg; //psum reg
+    // psum_reg holds hte current computation and hte final_out reg is the final after all the cycles are done
     reg signed [(DATA_WIDTH - 1):0] weight_reg;  //weight reg
     reg signed [(DATA_WIDTH - 1):0] act_reg;
-    reg signed done_reg; // when the calculation for all the activations cycles are done?
+    // reg signed done_reg; // when the calculation for all the activations cycles are done?
 
-    // psum = (act_in * weight) + psum_passed from top
-    // psum_wdith = 16 bits + log2(N) = 20 bits
-    // weights stationary -> assign mac_result = (act_in * weight_reg) + psum_in;
-    assign mac_result = (act_in * weight_reg);
+    assign mac_result = (act_reg * weight_reg);
+    assign out_valid = drain; 
 
     // got this from discussion slide
     always @(posedge clk or negedge rst_n) begin
@@ -42,23 +43,21 @@ module pe#(
             psum_reg <= {PSUM_WIDTH{1'b0}};
             weight_reg <= {DATA_WIDTH{1'b0}};
             act_reg <= {DATA_WIDTH{1'b0}};
-            final_out_reg <= {DATA_WIDTH{1'b0}}';
-            done_reg <= '0
         end
         else begin
             // start a new accumulation cycle
-            if (clear)
-                final_out_reg <= {DATA_WIDTH{1'b0}};
-            else if (acc_en && ) begin
+            weight_reg <= weight_in;            
+            act_reg <= act_in;
+            if (clear) psum_reg <= {PSUM_WIDTH{1'b0}};
+            // only accumulate when controller enables?
+            else if (compute_en) begin
                 // previous stored psum is added to the current cycle psum
                 psum_reg <= psum_reg + mac_result;
             end
-            act_reg <= act_in;
-            psum_reg <= mac_result;
         end
     end
 
-    assign final_out = psum_reg;
+    assign psum_out = psum_reg;
     assign act_out = act_reg;
     assign weight_out = weight_reg;
 
