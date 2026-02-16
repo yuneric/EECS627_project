@@ -3,7 +3,7 @@ module relu #(
     parameter PSUM_WIDTH = 32
 )(
     input wire signed [PSUM_WIDTH*ARRAY_SIZE-1:0] psum_in_vec,
-    input wire en, // enable signal to disable the relu if needed
+    input wire en, // enable signal to disable the relu
     output wire signed [PSUM_WIDTH*ARRAY_SIZE-1:0] relu_out_vec 
 );
     // parameter alpha_shift = 5
