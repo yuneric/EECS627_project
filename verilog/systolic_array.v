@@ -63,7 +63,7 @@ module systolic_array #(
                     // Outputs
                     .act_out(act_wires[i][j+1]),        // To Right
                     .psum_out(psum_wires[i+1][j]),      // To Bottom
-                    .weight_out(weight_wires[i+1][j])   // To Bottom (daisy chain loading)
+                    .weight_out(weight_wires[i+1][j]),   // To Bottom (daisy chain loading)
 
                     .out_valid(pe_out_valid[i*ARRAY_SIZE+j])
                 );
