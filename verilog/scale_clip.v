@@ -2,6 +2,7 @@ module scale_clip #(
     parameter ARRAY_SIZE = 4,
     parameter PSUM_WIDTH = 32,
     parameter OUTPUT_WIDTH = 8, //int8
+    // parameter SHIFT_WIDTH = $clog2(shift_by)
     parameter SHIFT_WIDTH = 5
 )(
     input wire [SHIFT_WIDTH-1:0] shift_by,
@@ -9,7 +10,7 @@ module scale_clip #(
     output wire signed [OUTPUT_WIDTH*ARRAY_SIZE-1:0] scaled_vec
 );
 
-    localparam signed [OUTPUT_WIDTH-1:0] UPPER = 'd127;
+    localparam signed [OUTPUT_WIDTH-1:0] UPPER = 127;
     // upper and lower range for a int8 numebr
     localparam signed [OUTPUT_WIDTH-1:0] LOWER = -128;
 
@@ -21,7 +22,7 @@ module scale_clip #(
 
             wire signed [PSUM_WIDTH-1:0] after_shift;
             // 
-            assign after_shift = psum >> shift_by;
+            assign after_shift = psum >>> shift_by;
 
             wire signed [OUTPUT_WIDTH-1:0] final_shift_check;
             // if higher than upper then use upper and vice vccers
