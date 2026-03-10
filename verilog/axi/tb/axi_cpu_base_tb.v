@@ -506,78 +506,6 @@ module testbench;
         end
     endtask
 
-    // task npu_store_weights(input [31:0] addr, input [7:0] len, input [31:0] start_data);
-    //     integer i;
-    //     integer timeout;
-    //     begin
-    //         @(posedge clk);
-    //         npu_awaddr_reg  <= addr;
-    //         npu_awlen_reg   <= len;
-    //         npu_awvalid_reg <= 1'b1;
-            
-    //         npu_wdata_reg   <= start_data; 
-    //         npu_wvalid_reg  <= 1'b1;
-    //         npu_wlast_reg   <= (len == 0);
-
-    //         $fwrite(npu_log_fd, "[%0t] START NPU WRITE BURST: ADDR=%x LEN=%d\n", $time, addr, len+1);
-
-    //         timeout = 0;
-    //         // while (npu_awvalid_reg && (timeout < 500)) begin
-    //         //     @(posedge clk);
-    //         //     if (npu_awready_wire) begin
-    //         //         npu_awvalid_reg <= 1'b0; // Success!
-    //         //     end
-    //         //     timeout = timeout + 1;
-    //         // end
-
-    //         // while (timeout < 500) begin
-    //         //     @(posedge clk);
-    //         //     if (npu_awready_wire) begin
-    //         //         npu_awvalid_reg <= 1'b0; // Success!
-    //         //     end
-    //         //     timeout = timeout + 1;
-    //         // end
-
-    //         // $finish;
-            
-    //         wait(npu_awready_wire);
-          
-    //         @(posedge clk);
-    //         npu_awvalid_reg <= 1'b0;
-
-    
-    //         for (i = 0; i <= len; i = i + 1) begin
-    //             wait(npu_wready_wire);
-    //             @(posedge clk);
-    //             npu_wdata_reg  <= start_data + i; 
-    //             npu_wvalid_reg <= 1'b1;
-    //             npu_wlast_reg  <= (i == len);
-    //         end
-            
-    //         wait(npu_wready_wire);
-    //         @(posedge clk);
-    //         npu_wvalid_reg <= 1'b0;
-    //         npu_wlast_reg  <= 1'b0;
-
-    //         while (timeout < 500) begin
-    //             @(posedge clk);
-    //             if (npu_awready_wire) begin
-    //                 npu_awvalid_reg <= 1'b0; // Success!
-    //             end
-    //             timeout = timeout + 1;
-    //         end
-
-    //         // wait(npu_bvalid_wire);
-    //         // @(posedge clk);
-    //         // #1;
-
-    //         $finish;
-    //         // $fwrite(npu_log_fd, "[%0t] END NPU WRITE BURST (Response Received)\n\n", $time);
-    //         // $fflush(npu_log_fd);
-    //     end
-    // endtask
-
-
     task npu_store_weights(input [31:0] addr, input [7:0] len, input [31:0] start_data);
         integer i;
         begin
@@ -595,25 +523,32 @@ module testbench;
             // --- 2. Data Burst Phase ---
             $fwrite(npu_log_fd, "[%0t] START NPU WRITE BURST: ADDR=%x LEN=%d\n", $time, addr, len+1);
             
-            for (i = 0; i <= len; i = i + 1) begin
+
+            i = 0;
+            while (i <= len) begin
+                // 1. DRIVE: Set the values for this beat
                 npu_wdata_reg  <= start_data + i; 
                 npu_wvalid_reg <= 1'b1;
                 npu_wlast_reg  <= (i == len);
 
-                // Wait for memory/NPU to be ready for this specific beat
-                wait(npu_wready_wire);
-                $fwrite(npu_log_fd, "running\n", $time);
-                $fflush(npu_log_fd);
+                // 2. THE HANDSHAKE: Wait for the rising edge where both are 1
+                // We stay in this 'do-nothing' state until the Arbiter is ready
+                @(posedge clk);
                 
-                // This @(posedge clk) is the most important part!
-                // It holds WVALID high until the actual clock edge where data is sampled.
-                @(posedge clk); 
+                if (npu_wready_wire) begin
+                    // Handshake occurred!
+                    $fwrite(npu_log_fd, "[%0t] Handshake Success - Beat %0d\n", $time, i);
+                    $fflush(npu_log_fd);
+                    
+                    // Only increment the index if the data was actually accepted
+                    i = i + 1;
+                end else begin
+                    // No handshake? The loop repeats with the same 'i', 
+                    // effectively "holding" the data stable for another cycle.
+                    $fwrite(npu_log_fd, "[%0t] Waiting... Arbiter Busy\n", $time);
+                end
             end
 
-            @(posedge clk);
-            @(posedge clk);
-            @(posedge clk);
-            @(posedge clk);
             // // --- 3. Cleanup & Response Phase ---
             npu_wvalid_reg <= 1'b0;
             npu_wlast_reg  <= 1'b0;
@@ -638,47 +573,48 @@ module testbench;
     
 
     // NPU Stimulus Mapped from Trace
+    integer test_len;
     initial begin
         wait(resetn);
         
         // Let the CPU boot uninterrupted
-        repeat(1000) @(posedge clk);
+        repeat(1) @(posedge clk);
         
         // //ADDR=000007d0 LEN=8
-        // $display("[%0t] Starting NPU Read Test 1...", $time);
-        // npu_load_weights(32'h0000_07D0, 8'd7); 
-        // repeat(10) @(posedge clk);
+        $display("[%0t] Starting NPU Read Test 1...", $time);
+        npu_load_weights(32'h0000_07D0, 8'd7); 
+        repeat(1) @(posedge clk);
 
         // // ADDR=00000500 LEN=16
-        // $display("[%0t] Starting NPU Read Test 2...", $time);
-        // npu_load_weights(32'h0000_0500, 8'd15); 
-        // repeat(10) @(posedge clk);
+        $display("[%0t] Starting NPU Read Test 2...", $time);
+        npu_load_weights(32'h0000_0500, 8'd15); 
+        repeat(1) @(posedge clk);
 
-        // // ADDR=00000000 LEN=256
-        // $display("[%0t] Starting NPU Read Test 3...", $time);
-        // npu_load_weights(32'h0000_0000, 8'd255); 
-        // repeat(10) @(posedge clk);
+        // // // ADDR=00000000 LEN=256
+        $display("[%0t] Starting NPU Read Test 3...", $time);
+        npu_load_weights(32'h0000_0000, 8'd255); 
+        repeat(1) @(posedge clk);
 
-        // // ADDR=00000190 LEN=4
-        // $display("[%0t] Starting NPU Read Test 4...", $time);
-        // npu_load_weights(32'h0000_0190, 8'd3); 
-        // repeat(10) @(posedge clk);
+        //ADDR=00000190 LEN=4
+        $display("[%0t] Starting NPU Read Test 4...", $time);
+        npu_load_weights(32'h0000_0190, 8'd3); 
+        repeat(1) @(posedge clk);
 
         // // ADDR=000001a0 LEN=4
-        // $display("[%0t] Starting NPU Read Test 5...", $time);
-        // npu_load_weights(32'h0000_01A0, 8'd3); 
-        // repeat(10) @(posedge clk);
+        $display("[%0t] Starting NPU Read Test 5...", $time);
+        npu_load_weights(32'h0000_01A0, 8'd3); 
+        repeat(1) @(posedge clk);
 
         // // ADDR=000001b0 LEN=4
-        // $display("[%0t] Starting NPU Read Test 6...", $time);
-        // npu_load_weights(32'h0000_01B0, 8'd3); 
-        // repeat(100) @(posedge clk);
+        $display("[%0t] Starting NPU Read Test 6...", $time);
+        npu_load_weights(32'h0000_01B0, 8'd3); 
+        repeat(1) @(posedge clk);
 
         // // NPU Write Burst (Store)
         $display("[%0t] Starting NPU Write Test...", $time);
         npu_store_weights(32'h0000_3000, 8'd3, 32'hAAAA0000); // Writes 4 beats
 
-        repeat(10) @(posedge clk);
+        repeat(1) @(posedge clk);
 
         // Verification Read Burst (Load)
         $display("[%0t] Verifying NPU Write with Read Test...", $time);
@@ -686,9 +622,21 @@ module testbench;
 
         // Let CPU run some more
         repeat(500) @(posedge clk);
+
+
+        //more npu write and read tests
+        for (test_len = 8; test_len <= 255; test_len = test_len + 32) begin
+            npu_store_weights(32'h4000 + (test_len*4), test_len-1, 32'hBBBB_0000 + test_len);
+            repeat(1) @(posedge clk); 
+        end
+
+        // --- [3] SYSTEMATIC READ STRESS TEST (8 to 255) ---
+        for (test_len = 8; test_len <= 255; test_len = test_len + 32) begin
+            npu_load_weights(32'h4000 + (test_len*4), test_len-1);
+            repeat(1) @(posedge clk);
+        end
         
         $display("Simulation timeout reached. All trace loads, write, and verify read completed.");
-        $finish;
     end
 
     initial begin

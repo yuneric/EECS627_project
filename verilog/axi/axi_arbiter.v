@@ -1,160 +1,3 @@
-// module axi_arbiter #(
-//     parameter ADDR_WIDTH = 32,
-//     parameter DATA_WIDTH = 32
-// )(                            
-//     input wire clk,
-//     input wire rst_n,
-
-//     // CPU MASTER
-//     input  wire                  i_cpu_valid,
-//     output reg                   o_cpu_ready,
-//     input  wire [ADDR_WIDTH-1:0] i_cpu_addr,
-//     input  wire [DATA_WIDTH-1:0] i_cpu_wdata,
-//     input  wire [3:0]            i_cpu_wstrb,
-//     output wire [DATA_WIDTH-1:0] o_cpu_rdata,
-
-//     // NPU MASTER
-//     input  wire [ADDR_WIDTH-1:0] i_npu_araddr, //the address we want to read from the starting address.
-//     input  wire [7:0]            i_npu_arlen, //the total number of bursts
-//     input  wire [2:0]            i_npu_arsize, //the size of one beat.
-//     input  wire                  i_npu_arvalid, //the npu sends that it is sending a valid address for read
-//     output wire                  o_npu_arready, //arready is set when its the processor is in the idle state -> so the npu could send a new signal.
-//     output wire [DATA_WIDTH-1:0] o_npu_rdata, //read data.
-//     output reg                   o_npu_rlast, //rlast; done reading the bursts. 
-//     output reg                   o_npu_rvalid, //the data being sent is valid
-//     input  wire                  i_npu_rready, //is the npu ready to receive data.
-
-//     // MEMORY SLAVE
-//     output reg                   o_mem_valid,
-//     input  wire                  i_mem_ready,
-//     output reg  [ADDR_WIDTH-1:0] o_mem_addr,
-//     output reg  [DATA_WIDTH-1:0] o_mem_wdata,
-//     output reg  [3:0]            o_mem_wstrb,
-//     input  wire [DATA_WIDTH-1:0] i_mem_rdata
-// );
-
-//     localparam ST_IDLE       = 2'd0;
-//     localparam ST_NPU_BURST  = 2'd1;
-//     localparam ST_CPU_ACCESS = 2'd2;
-
-//     reg [1:0] state, next_state;
-//     reg [ADDR_WIDTH-1:0] burst_addr;
-//     reg [7:0]            burst_count;
-//     reg [2:0]            burst_size;       
-
-//     //set the state
-//     always @(posedge clk or negedge rst_n) begin
-//         if (!rst_n) state <= ST_IDLE;
-//         else        state <= next_state;
-//     end
-
-//     //next state logic
-//     always @(*) begin
-//         //default state to prevent latches.
-//         next_state = state;
-
-//         //state
-//         case (state)
-//             ST_IDLE: begin
-//                 //if npu read, then give npu priority.
-//                 if (i_npu_arvalid)      next_state = ST_NPU_BURST;
-//                 //else if cpu read or write, then give cpu priority 
-//                 else if (i_cpu_valid)   next_state = ST_CPU_ACCESS;
-//             end
-//             //if state is cpu access and memory returns ready, then we could go to idle state.
-//             ST_CPU_ACCESS: begin
-//                 if (i_cpu_valid && i_mem_ready) next_state = ST_IDLE;
-//             end
-//             //if mem_ready, npu is ready to accept values, and burst_count is 0.
-//             ST_NPU_BURST: begin
-//                 if (i_mem_ready && i_npu_rready && (burst_count == 8'd0)) 
-//                     next_state = ST_IDLE;
-//             end
-//         endcase
-//     end
-
-//     //npu arready is based on the state.
-//     //backpressure to hold it 0 if if not idle, so keep address the same
-//     //arready signifies that the bus is not free so don't change the address.
-//     assign o_npu_arready = (state == ST_IDLE);
-
-//     //this is read data.
-//     assign o_cpu_rdata   = i_mem_rdata;
-//     assign o_npu_rdata   = i_mem_rdata;
-
-
-//     //the routing
-//     always @(*) begin
-//         // Defaults
-//         o_mem_valid  = 1'b0;
-//         o_mem_addr   = i_cpu_addr;
-//         o_mem_wdata  = i_cpu_wdata;
-//         o_mem_wstrb  = 4'd0;
-//         o_cpu_ready  = 1'b0;
-//         o_npu_rvalid = 1'b0;
-//         o_npu_rlast  = 1'b0;
-
-//         case (state)
-//             ST_IDLE: begin
-//                 //if idle and npu arvalid
-//                 //get wiring ready.
-//                 if (i_npu_arvalid) begin
-//                     //set mem_valid to read from memory.
-//                     o_mem_valid = 1'b1;
-//                     o_mem_addr  = i_npu_araddr;
-//                 //else if cpu is valid.
-//                 end else if (i_cpu_valid) begin
-//                     o_mem_valid = 1'b1;
-//                     o_mem_addr  = i_cpu_addr;
-//                     o_mem_wdata = i_cpu_wdata;
-//                     o_mem_wstrb = i_cpu_wstrb;
-//                     o_cpu_ready = i_mem_ready;
-//                 end
-//             end
-
-//             //else keep wiiring at CPU and NPU.
-//             ST_CPU_ACCESS: begin
-//                 o_mem_valid = i_cpu_valid;
-//                 o_mem_addr  = i_cpu_addr;
-//                 o_mem_wdata = i_cpu_wdata;
-//                 o_mem_wstrb = i_cpu_wstrb;
-//                 o_cpu_ready = i_mem_ready;
-//             end
-
-//             //npu burst
-//             ST_NPU_BURST: begin
-//                 o_mem_valid  = i_npu_rready; 
-//                 o_mem_addr   = burst_addr;
-//                 //data is ready
-//                 o_npu_rvalid = i_mem_ready;
-//                 o_npu_rlast  = (burst_count == 8'd0);
-//             end
-//         endcase
-//     end
-
-   
-//     // Handle the burst counters only on clock edges
-//     always @(posedge clk or negedge rst_n) begin
-//         if (!rst_n) begin
-//             burst_addr  <= 32'd0;
-//             burst_count <= 8'd0;
-//             burst_size  <= 3'd0;
-//         //set it up if idle and npu_arvalid, so sending actual request
-//         end else if (state == ST_IDLE && i_npu_arvalid) begin
-//             burst_addr  <= i_npu_araddr;
-//             burst_count <= i_npu_arlen;
-//             burst_size  <= i_npu_arsize;
-//         //if burst and npu_rready to accept new data.
-//         end else if (state == ST_NPU_BURST && i_mem_ready && i_npu_rready) begin
-//             if (burst_count != 8'd0) begin
-//                 burst_count <= burst_count - 8'd1;
-//                 burst_addr  <= burst_addr + (32'd1 << burst_size);
-//             end
-//         end
-//     end
-
-// endmodule
-
 module axi_arbiter #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32
@@ -176,7 +19,7 @@ module axi_arbiter #(
     input  wire [7:0]            i_npu_arlen, //the number of bursts
     input  wire [2:0]            i_npu_arsize, //the beat size
     input  wire                  i_npu_arvalid, //if the address you're passing is valid
-    output wire                  o_npu_arready, //if the npu signal can change to the next thing
+    output reg                  o_npu_arready, //if the npu signal can change to the next thing
     output wire [DATA_WIDTH-1:0] o_npu_rdata, //the npu read data
     output reg                   o_npu_rlast, //the npu rlast is the last beat.
     output reg                   o_npu_rvalid, //the data the memory sent is valid
@@ -186,7 +29,7 @@ module axi_arbiter #(
     input  wire [7:0]            i_npu_awlen, //the number of bursts
     input  wire [2:0]            i_npu_awsize, //the beat size
     input  wire                  i_npu_awvalid, //if the address you're passing is valid
-    output wire                  o_npu_awready, //if the npu could move onto changing the next thing
+    output reg                  o_npu_awready, //if the npu could move onto changing the next thing
     input  wire [DATA_WIDTH-1:0] i_npu_wdata, //the write data.
     input  wire [3:0]            i_npu_wstrb, //the mask.
     input  wire                  i_npu_wlast, //the last input it wants to write
@@ -225,12 +68,18 @@ module axi_arbiter #(
 
     always @(*) begin
         next_state = state;
+        o_npu_arready = 1'b0;
+        o_npu_awready = 1'b0;
         case (state)
             ST_IDLE: begin
                 //The npu write is given priority
-                if (i_npu_awvalid)      next_state = ST_NPU_WBURST;
-                else if (i_npu_arvalid) next_state = ST_NPU_RBURST;
-                else if (i_cpu_valid)   next_state = ST_CPU_ACCESS;
+                if (i_npu_awvalid) begin 
+                    next_state = ST_NPU_WBURST;
+                    o_npu_awready = 1'b1;
+                end else if (i_npu_arvalid) begin
+                    next_state = ST_NPU_RBURST;
+                    o_npu_arready = 1'b1;
+                end else if (i_cpu_valid)   next_state = ST_CPU_ACCESS;
             end
             ST_CPU_ACCESS: begin
                 if (i_cpu_valid && i_mem_ready) next_state = ST_IDLE;
@@ -254,10 +103,10 @@ module axi_arbiter #(
 
 
     //if the state is idle and we're not writing so we could move on
-    assign o_npu_arready = (state == ST_IDLE) && !i_npu_awvalid;
+    //assign o_npu_arready = (state == ST_IDLE) && !i_npu_awvalid;
 
     //if the state is idle, so ready to move on to next operation
-    assign o_npu_awready = (state == ST_IDLE);
+    //assign o_npu_awready = (state == ST_IDLE);
 
     //if the data from wready is valid
     assign o_npu_wready  = (state == ST_NPU_WBURST) && i_mem_ready;
@@ -293,7 +142,7 @@ module axi_arbiter #(
                     o_mem_valid = 1'b1; //fine to read randomly.
                     o_mem_addr  = i_npu_araddr;
                 end else if (i_cpu_valid) begin
-                    o_mem_valid = 1'b1;
+                    o_mem_valid = i_cpu_valid;
                     o_mem_addr  = i_cpu_addr;
                     o_mem_wdata = i_cpu_wdata;
                     o_mem_wstrb = i_cpu_wstrb;
