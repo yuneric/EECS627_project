@@ -91,7 +91,7 @@ module axi_arbiter #(
             end
             ST_NPU_WBURST: begin
                 //if npu is ready to write values and memory is ready to receive and burst count is 0. then NPU should be done with writing, so move to response phase.
-                if (i_mem_ready && i_npu_wvalid && (burst_count == 8'd0))
+                if (i_mem_ready && i_npu_wvalid && (burst_count == 8'd0) && i_npu_wlast)
                     next_state = ST_NPU_BRESP;
             end
             //this is the signal saying that you're all done from memory. it received the last write and you could move on.
@@ -132,17 +132,19 @@ module axi_arbiter #(
         o_npu_bresp  = 2'b00;
 
         case (state)
+            //in idle state latch in values and then use them when actually writing/reading.
             ST_IDLE: begin
                 if (i_npu_awvalid) begin
-                    o_mem_valid = i_npu_wvalid;
+                    //wait to latch data
+                    // o_mem_valid = i_npu_wvalid;
                     o_mem_addr  = i_npu_awaddr;
                     o_mem_wdata = i_npu_wdata;
                     o_mem_wstrb = i_npu_wstrb;
                 end else if (i_npu_arvalid) begin
-                    o_mem_valid = 1'b1; //fine to read randomly.
+                    // o_mem_valid = 1'b1; //fine to read randomly.
                     o_mem_addr  = i_npu_araddr;
                 end else if (i_cpu_valid) begin
-                    o_mem_valid = i_cpu_valid;
+                    // o_mem_valid = i_cpu_valid;
                     o_mem_addr  = i_cpu_addr;
                     o_mem_wdata = i_cpu_wdata;
                     o_mem_wstrb = i_cpu_wstrb;
