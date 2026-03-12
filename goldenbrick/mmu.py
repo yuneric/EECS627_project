@@ -92,6 +92,16 @@ class MMU:
             "addr": self._o_wgt_addr,
             "data": tuple(self._o_wgt_wdata) # Tuple prevents external mutation
         }
+    
+    #output activation tile to mem sram
+    @property
+    def act_outputs(self):
+        """Returns the current state of the activation tile SRAM interface wires."""
+        return {
+            "wen": self._o_act_wen,
+            "addr": self._o_act_waddr,
+            "data": tuple(self._o_wgt_wdata) # Tuple prevents external mutation
+        }
 
     @property
     #sends signals out to axi arbiter for reading
@@ -215,6 +225,9 @@ class MMU:
         #current off chip memory address
         current_mem_ptr = self._i_addr
 
+        #will help find the address we want to jump to after the rows are done
+        jump_mem_ptr = self.i_addr
+
         #sram address to write to on chip memory
         sram_addr  = 0
 
@@ -225,63 +238,63 @@ class MMU:
 
             #total number of beats received
             beats_received = 0
-        
-        while beats_received < total_beats:
-            #can only do 256 beat bursts at a time
-            burst_len = min(256, total_beats - beats_received)
-
-            #setting address and burst length;
-            #the beat size is already set in the initialization
-            self._o_araddr = current_mem_ptr
-            self._o_arlen = burst_len - 1
-            self._o_arvalid = 1
             
-            # Handshake with bus
-            #send the request
-            ready = bus.request_read(self._o_araddr, self._o_arlen)
-            self.set_axi_arready(ready)
+            #jump to the word we want to process new row.
+            current_mem_ptr = jump_mem_ptr
+        
+            while beats_received < total_beats:
+                #can only do 256 beat bursts at a time
+                burst_len = min(256, total_beats - beats_received)
 
-            if self._o_arvalid and self._i_arready:
-                #can turn off arvalid:
-                #if axi ready then, = self.o_arvalid could be off
-                self._o_arvalid = 0
+                #setting address and burst length;
+                #the beat size is already set in the initialization
+                self._o_araddr = current_mem_ptr
+                self._o_arlen = burst_len - 1
+                self._o_arvalid = 1
+                
+                # Handshake with bus
+                #send the request
+                ready = bus.request_read(self._o_araddr, self._o_arlen)
+                self.set_axi_arready(ready)
 
-                # 2. AXI DATA PHASE
-                for b in range(burst_len):
-                    # Fetch from bus
-                    #NOTE: FOR RTL have to poll until rlast
-                    rdata, rvalid, rlast = bus.get_data(beats_received)
-                    self.set_axi_read_data(rdata, rvalid, rlast)
+                if self._o_arvalid and self._i_arready:
+                    #can turn off arvalid:
+                    #if axi ready then, = self.o_arvalid could be off
+                    self._o_arvalid = 0
 
-                    if self._i_rvalid:
-                        # Pack 32-bit beats into 64-bit data register
-                        # Even = Low, Odd = High
-                        self._o_wgt_wdata[beats_received % 2] = self._i_rdata
+                    # 2. AXI DATA PHASE
+                    for b in range(burst_len):
+                        # Fetch from bus
+                        #NOTE: FOR RTL have to poll until rlast
+                        rdata, rvalid, rlast = bus.get_data(beats_received)
+                        self.set_axi_read_data(rdata, rvalid, rlast)
 
-                        if beats_received % 2 == 1:
-                            # We have a full word: Drive SRAM signals
-                            self._o_wgt_wen = 1
-                            self._o_wgt_sram_sel = curr_bank
-                            self._o_wgt_addr = sram_bank_addrs[curr_bank]
-                            
-                            # Inform bus/SRAM to latch the data
-                            bus.latch_weight_sram_write(self.wgt_outputs)
+                        if self._i_rvalid:
+                            # Pack 32-bit beats into 64-bit data register
+                            # Even = Low, Odd = High
+                            self._o_act_wdata[beats_received % 2] = self._i_rdata
 
-                            # Internal bookkeeping
-                            sram_bank_addrs[curr_bank] += 1
-                            words_in_current_block += 1
-                            
-                            # Switch bank after 8 words
-                            if words_in_current_block == 8:
-                                words_in_current_block = 0
-                                curr_bank = (curr_bank + 1) % 8
-                        else:
-                            self._o_wgt_wen = 0
+                            if beats_received % 2 == 1:
+                                # We have a full word: Drive SRAM signals
+                                self._o_act_wen = 1
+                                self._o_act_waddr = sram_addr
+                                
+                                # Inform bus/SRAM to latch the data
+                                bus.latch_weight_sram_write(self.act_outputs)
 
-                        beats_received += 1
+                                # Internal bookkeeping
+                                sram_addr = sram_addr + 1
+                            else:
+                                self._o_act_wen = 0
 
-                # Update memory pointer (4 bytes per 32-bit beat)
-                current_mem_ptr += (burst_len * 4)
+                            beats_received += 1
+
+                    # Update memory pointer (4 bytes per 32-bit beat)
+                    current_mem_ptr += (burst_len * 4)
+                
+            #update jump
+            jump_mem_ptr = jump_mem_ptr + self.i_tile_stride
+                
 
     def _execute_store_tile(self, bus):
     # Placeholder for activation storing logic
