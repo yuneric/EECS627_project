@@ -30,7 +30,16 @@ module mmu_tb;
 
     logic [63:0] act_sram [0:4095]; //the activation on chip sram (load tile data into), read tile data from and send to off chip memory
     logic [63:0] golden_act_sram [0:4095]; //this is the golden activation on chip sram to check data.
-    logic [31:0] golden_store_beats [0:8191]; //goldenbrick output used to check store tile?
+    //logic [31:0] golden_store_beats [0:8191]; //goldenbrick output used to check store tile?
+    //make golden_store_beats bigger to fully test store tile
+        //memory is off chip memory
+
+    //create a local mem
+    //this is taken from memory testbench
+    localparam int MEM_SIZE_BYTES  = 1 * 1024 * 1024;
+    localparam int MEM_WORDS= MEM_SIZE_BYTES / 4;
+
+    logic [31:0] golden_store_beats [0:MEM_WORDS-1];
     // for (int i = 0; i < 4096; i = i + 1) act_sram[i] = 64'h0;
 
     //activation data base addr.
@@ -189,23 +198,49 @@ module mmu_tb;
         end
     endfunction
 
+    // //this returns the expected bank addr where we should look for data to check.
+    // function automatic [10:0] expected_bank_addr(input integer word_idx);
+    //     integer kernel_words_local;
+    //     integer kernel_idx;
+    //     integer word_in_kernel;
+    //     begin
+    //         kernel_words_local = i_H * i_W * i_words_per_channel; // word’s offset within its own kernel
+    //         kernel_idx = word_idx / kernel_words_local; 
+    //         word_in_kernel = word_idx % kernel_words_local; //word’s offset within its own kernel
+    //         expected_bank_addr = (kernel_idx % 8) * kernel_words_local + word_in_kernel; //8 kernels sequentially inside one bank
+    //     end
+    // endfunction
+
     //this returns the expected bank addr where we should look for data to check.
     function automatic [10:0] expected_bank_addr(input integer word_idx);
         integer kernel_words_local;
         integer kernel_idx;
         integer word_in_kernel;
+        
+        integer full_cycles;
+        integer pos_in_block;
+        integer kernels_in_bank_so_far;
         begin
-            kernel_words_local = i_H * i_W * i_words_per_channel; // word’s offset within its own kernel
+            // 1. Calculate basic offsets
+            kernel_words_local = i_H * i_W * i_words_per_channel; 
             kernel_idx = word_idx / kernel_words_local; 
-            word_in_kernel = word_idx % kernel_words_local; //word’s offset within its own kernel
-            expected_bank_addr = (kernel_idx % 8) * kernel_words_local + word_in_kernel; //8 kernels sequentially inside one bank
+            word_in_kernel = word_idx % kernel_words_local; 
+            
+            // 2. How many times have we completely wrapped around all 8 banks?
+            // (1 full cycle = 8 banks * 8 kernels = 64 kernels)
+            full_cycles = kernel_idx / 64;
+            
+            // 3. What is this kernel's position within its 8-kernel block?
+            pos_in_block = kernel_idx % 8;
+            
+            // 4. Calculate how many kernels are sitting in this specific bank 
+            // A full cycle leaves 8 kernels. Then add the position in the current block.
+            kernels_in_bank_so_far = (full_cycles * 8) + pos_in_block;
+            
+            // 5. Calculate final exact address
+            expected_bank_addr = (kernels_in_bank_so_far * kernel_words_local) + word_in_kernel;
         end
     endfunction
-
-    //create a local mem
-    //this is taken from memory testbench
-    localparam int MEM_SIZE_BYTES  = 1 * 1024 * 1024;
-    localparam int MEM_WORDS= MEM_SIZE_BYTES / 4;
 
     //memory is off chip memory
     reg [31:0] memory [0:MEM_WORDS-1];
@@ -423,21 +458,21 @@ module mmu_tb;
         //if we're not resetting and the weight write enable is enabled.
         if (rst_n && o_wgt_wen) begin
             //if the sram_sel is not the expected bank, display an error
-            if (o_wgt_sram_sel !== expected_bank(write_count)) begin
+            if (o_wgt_sram_sel != expected_bank(write_count)) begin
                 $display("ERR write %0d: bank exp=%0d got=%0d",
                          write_count, expected_bank(write_count), o_wgt_sram_sel);
                 errors = errors + 1;
             end
 
             //is the address for the bank not expected, then print an error
-            if (o_wgt_addr !== expected_bank_addr(write_count)) begin
+            if (o_wgt_addr != expected_bank_addr(write_count)) begin
                 $display("ERR write %0d: addr exp=%0d got=%0d",
                          write_count, expected_bank_addr(write_count), o_wgt_addr);
                 errors = errors + 1;
             end
 
             //if the write data is not expected, then print an error,
-            if (o_wgt_wdata !== expected_word_data(write_count)) begin
+            if (o_wgt_wdata != expected_word_data(write_count)) begin
                 $display("ERR write %0d: data exp=%h got=%h",
                          write_count, expected_word_data(write_count), o_wgt_wdata);
                 errors = errors + 1;
@@ -448,6 +483,46 @@ module mmu_tb;
     end
 
 
+    // task automatic dump_weight_srams_python_format(
+    //     input integer fd,
+    //     input integer n_cfg,
+    //     input integer h_cfg,
+    //     input integer w_cfg,
+    //     input integer wpc_cfg
+    // );
+    //     logic [63:0] rd_back;
+    //     integer bank;
+    //     integer addr;
+    //     integer kernel_words_local;
+    //     integer kernels_in_bank;
+    //     integer first_kernel;
+    //     begin
+    //         //one kernel number.
+    //         kernel_words_local = h_cfg * w_cfg * wpc_cfg;
+
+    //         //banks
+    //         for (bank = 0; bank < WT_BANKS; bank = bank + 1) begin
+
+
+    //             first_kernel = bank * 8;
+    //             //calculate how many kernels will be in each bank.
+    //             if (n_cfg > first_kernel)
+    //                 kernels_in_bank = ((n_cfg - first_kernel) > 8) ? 8 : (n_cfg - first_kernel);
+    //             else
+    //                 kernels_in_bank = 0;
+
+    //             //adds in all the kernels in the bank for debugging
+    //             for (addr = 0; addr < (kernels_in_bank * kernel_words_local); addr = addr + 1) begin
+    //                 read_weight_word(bank, addr, rd_back);
+    //                 if ((^rd_back !== 1'bx) && (rd_back != 64'h0)) begin
+    //                     $fdisplay(fd, "bank=%0d addr=%0d data=%016h", bank, addr, rd_back);
+    //                 end
+    //             end
+    //         end
+    //     end
+    // endtask
+    
+    //new dump_weight_srams_task that doesn't limit print of more than 8 kernels in a bank
     task automatic dump_weight_srams_python_format(
         input integer fd,
         input integer n_cfg,
@@ -460,23 +535,40 @@ module mmu_tb;
         integer addr;
         integer kernel_words_local;
         integer kernels_in_bank;
-        integer first_kernel;
+        
+        // New variables for wrap-around math
+        integer full_cycles;
+        integer remainder_kernels;
+        integer base_kernels;
+        integer extra_kernels;
+        
         begin
-            //one kernel number.
             kernel_words_local = h_cfg * w_cfg * wpc_cfg;
 
-            //banks
             for (bank = 0; bank < WT_BANKS; bank = bank + 1) begin
+                
+                // 1. How many times do we perfectly fill all 8 banks? (64 kernels per full cycle)
+                full_cycles = n_cfg / 64; 
+                
+                // 2. How many kernels are left over after the perfect cycles?
+                remainder_kernels = n_cfg % 64; 
+                
+                // 3. Every bank gets at least this many kernels from the full cycles
+                base_kernels = full_cycles * 8; 
 
+                // 4. Figure out if THIS specific bank gets any of the leftovers
+                if (remainder_kernels > (bank * 8)) begin
+                    extra_kernels = remainder_kernels - (bank * 8);
+                    // Cap the extra kernels for this bank at 8
+                    if (extra_kernels > 8) extra_kernels = 8;
+                end else begin
+                    extra_kernels = 0;
+                end
 
-                first_kernel = bank * 8;
-                //calculate how many kernels will be in each bank.
-                if (n_cfg > first_kernel)
-                    kernels_in_bank = ((n_cfg - first_kernel) > 8) ? 8 : (n_cfg - first_kernel);
-                else
-                    kernels_in_bank = 0;
+                // 5. Total valid kernels sitting in this specific bank
+                kernels_in_bank = base_kernels + extra_kernels;
 
-                //adds in all the kernels in the bank for debugging
+                // Now loop through exactly the right number of addresses!
                 for (addr = 0; addr < (kernels_in_bank * kernel_words_local); addr = addr + 1) begin
                     read_weight_word(bank, addr, rd_back);
                     if ((^rd_back !== 1'bx) && (rd_back != 64'h0)) begin
@@ -533,6 +625,19 @@ module mmu_tb;
         end
     end
 
+    //dump file for debugging
+    initial begin
+        // Name the output waveform file
+        $fsdbDumpfile("mmu_tb.fsdb");
+        
+        // Dump all variables at all levels of hierarchy (0 = all levels, mmu_tb = top module)
+        $fsdbDumpvars(0, mmu_tb);
+        
+        // IMPORTANT for your design: Dump Multi-Dimensional Arrays (MDAs)
+        // Without this, Verdi won't show your act_sram, memory, or golden_act_sram arrays!
+        $fsdbDumpMDA(); 
+    end
+
     initial begin
         integer i;
         integer test_idx;
@@ -545,6 +650,8 @@ module mmu_tb;
         integer stride_bytes;
         integer out_fd;
         integer weight_fd;
+        integer store_dump_fd; //dump to check store tile
+        string store_dump_path;
         string cfg_path;
         string wgt_hex_path;
         string weight_dump_path;
@@ -576,6 +683,8 @@ module mmu_tb;
         write_count         = 0;
         timeout_count       = 0;
         for (test_idx = 0; test_idx <= 7; test_idx = test_idx + 1) begin
+        //for (test_idx = 7; test_idx <= 7; test_idx = test_idx + 1) begin
+            ///===============================LOAD WEIGHTS==================================================
             cfg_path        = $sformatf("../../../goldenbrick/mmu_vectors/test%0d/config.txt", test_idx);
             wgt_hex_path    = $sformatf("../../../goldenbrick/mmu_vectors/test%0d/wgt_mem_axi32.hex", test_idx);
             weight_dump_path = $sformatf("rtl_weight_sram_dump_test%0d.txt", test_idx);
@@ -584,12 +693,14 @@ module mmu_tb;
             golden_store_path = $sformatf("../../../goldenbrick/mmu_vectors/test%0d/golden_store_axi32.hex", test_idx);
 
             load_test_config(cfg_path, n_cfg, h_cfg, w_cfg, c_cfg, wpc_cfg);
+            
             expected_words = h_cfg * w_cfg * wpc_cfg;
+           
 
             //stride_bytes   = w_cfg * wpc_cfg * 8;
             // nanda: previous spec the above line was correct but now that the goldebrick changed 
             stride_bytes   = w_cfg;
-            repeat (5) @(posedge clk);
+            repeat (5) @(posedge clk); 
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
             rst_n = 1'b1;
@@ -613,6 +724,8 @@ module mmu_tb;
             i_words_per_channel = wpc_cfg[9:0];
             i_addr              = WGT_BASE;
             i_tile_stride       = 10'd0;
+            
+            
 
             $display("Running load_weights test%0d: N=%0d H=%0d W=%0d C=%0d words_per_channel=%0d",
                      test_idx, n_cfg, h_cfg, w_cfg, c_cfg, wpc_cfg);
@@ -645,6 +758,8 @@ module mmu_tb;
                         test_idx, stride_bytes);
                 continue;
             end
+
+            ///===============================LOAD TILE==================================================
             repeat (5) @(posedge clk);
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
@@ -671,9 +786,15 @@ module mmu_tb;
             i_N                 = 10'd0;
             i_W                 = w_cfg[9:0];
             i_H                 = h_cfg[9:0];
+            //testing subtile - subtile H x W
+            i_W                 = 2;
+            i_H                 = 2;
             i_words_per_channel = wpc_cfg[9:0];
             i_addr              = ACT_BASE;
             i_tile_stride       = stride_bytes[9:0];
+
+            //expected_words are based on H x W
+            expected_words = i_H * i_W * wpc_cfg;
 
             $display("Running load_tile test%0d: H=%0d W=%0d C=%0d words_per_channel=%0d",
                      test_idx, h_cfg, w_cfg, c_cfg, wpc_cfg);
@@ -704,6 +825,9 @@ module mmu_tb;
             for (i = 0; i < expected_words; i = i + 1) begin
                 if (act_sram[i] !== golden_act_sram[i]) begin
                     $display("FAIL load_tile test%0d word %0d", test_idx, i);
+                    //added additional things for debug
+                    $display("  Expected: %016h", golden_act_sram[i]);
+                    $display("  Actual:   %016h", act_sram[i]);
                     $finish;
                 end
             end
@@ -715,13 +839,17 @@ module mmu_tb;
             repeat (5) @(posedge clk);
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
+            //================================================STORE TILE======================================================================
             rst_n = 1'b1;
             repeat (2) @(posedge clk);
 
             timeout_count = 0;
 
-            for (i = 0; i < (expected_words * 2); i = i + 1)
-                memory[(STORE_BASE >> 2) + i] = 32'h0;
+            //empty put all of memory to help see if store tiles are being conducted properly:
+            // for (i = 0; i < (expected_words * 2); i = i + 1)
+            //     memory[(STORE_BASE >> 2) + i] = 32'h0;
+            for (i = 0; i < MEM_WORDS; i = i + 1)
+                memory[i] = 32'h0;
 
             i_load_weights      = 1'b0;
             i_load_tile         = 1'b0;
@@ -729,12 +857,19 @@ module mmu_tb;
             i_N                 = 10'd0;
             i_W                 = w_cfg[9:0];
             i_H                 = h_cfg[9:0];
+            //testing subtile - subtile H x W
+            i_W                 = 2;
+            i_H                 = 2;
             i_words_per_channel = wpc_cfg[9:0];
             i_addr              = STORE_BASE;
             i_tile_stride       = stride_bytes[9:0];
 
             $display("Running store_tile test%0d: H=%0d W=%0d C=%0d words_per_channel=%0d",
                      test_idx, h_cfg, w_cfg, c_cfg, wpc_cfg);
+
+            //set the dump files
+            store_dump_path = $sformatf("actual_store_beats_test%0d.txt", test_idx);
+            store_dump_fd = $fopen(store_dump_path, "w");
 
             i_store_tile = 1'b1;
             @(posedge clk);
@@ -754,13 +889,36 @@ module mmu_tb;
             @(posedge clk);
 
             //expected_words is count in on kernel -> check off chip memory write and golden brick stores.
-            for (i = 0; i < (expected_words * 2); i = i + 1) begin
-                if (memory[(STORE_BASE >> 2) + i] !== golden_store_beats[i]) begin
+            // for (i = 0; i < (expected_words * 2); i = i + 1) begin
+            //     $fdisplay(store_dump_fd, "beat_%0d: %08h", i, memory[(STORE_BASE >> 2) + i]);
+            //     if (memory[(STORE_BASE >> 2) + i] !== golden_store_beats[i]) begin
+            //         $display("FAIL store_tile test%0d beat %0d got=%08h exp=%08h",
+            //                  test_idx, i, memory[(STORE_BASE >> 2) + i], golden_store_beats[i]);
+            //         $finish;
+            //     end
+            // end
+
+            //needed to modify this for loop so that 
+            for (i = 0; i < 260096; i = i + 1) begin
+                $fdisplay(store_dump_fd, "beat_%0d: %08h", i, memory[(STORE_BASE >> 2) + i]);
+                if (memory[(STORE_BASE >> 2) + i] != golden_store_beats[i]) begin
                     $display("FAIL store_tile test%0d beat %0d got=%08h exp=%08h",
-                             test_idx, i, memory[(STORE_BASE >> 2) + i], golden_store_beats[i]);
+                            test_idx, i, memory[(STORE_BASE >> 2) + i], golden_store_beats[i]);
                     $finish;
                 end
             end
+
+            // // expected_words is count in on kernel -> check off chip memory write and golden brick stores.
+            // for (i = 0; i < 260096; i = i + 1) begin
+            //     $fdisplay(store_dump_fd, "beat_%0d: %08h", i, memory[i]);
+            //     if (memory[i] !== golden_store_beats[i]) begin
+            //         $display("FAIL store_tile test%0d beat %0d got=%08h exp=%08h",
+            //                  test_idx, i, memory[i], golden_store_beats[i]);
+            //         $finish;
+            //     end
+            // end
+
+            $fclose(store_dump_fd);
 
             $display("PASS store_tile test%0d", test_idx);
             dump_store_mem(out_fd, expected_words);

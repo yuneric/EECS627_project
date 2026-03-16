@@ -64,7 +64,7 @@ module mmu #(
     typedef enum logic [2:0] { 
         IDLE,   // wait for signal from the  
         SEND_READ_REQ,  // drive AXI AR channel/ wait for arready handshake
-        COLLECT_BEATS, // AXI READ: wait for both beats to come back from the axi and then combine them together
+        RECEIVE_READ_DATA, // AXI READ: wait for both beats to come back from the axi and then combine them together
         SEND_WRITE_ADDR, // one AXI write burst for the current row
         SEND_WRITE_DATA //64-bit activation SRAM words into 32-bit AXI write split them
     } state_t;
@@ -104,9 +104,22 @@ module mmu #(
     logic [ADDR_WIDTH-1:0] row_stride_bytes; // controller off chip row jump
     logic [9:0] beats_per_burst; //has to be less than 256
 
+
+    //TODO: need to think about the sizes of this bus - what is the max we'll get?
     logic [19:0] row_beats_total; // total axi beats needed for the row
     logic [19:0] row_beats_remaining; // axi beats left in the current row
     logic [ADDR_WIDTH-1:0] row_base_addr; //byte address of the start of the current row
+
+
+    //THNGS TO DO: 
+    //1. FIX THE STRIDE LOGIC and TEST WITH MORE THAN KERNELS
+    //2. Make read request and write request logic consistent
+    //3. Incorporate bvalid + check that all the valid axi handshake signals are being used (like wlast)
+    //4. FIX load weights logic to not be restricted by the row
+
+
+    //okay now that I've looked through the code -> look through the stride logic and fix that -> then look through nanda.py to understand how it works
+
 
     always_ff @(posedge i_clk) begin
         if(~i_rst_n) begin
@@ -181,8 +194,8 @@ module mmu #(
                             h_counter           <= i_H * i_N;
 
                             //row_stride_bytes word size is just 64.
-                            row_stride_bytes    <= i_W * i_words_per_channel * (WORD_SIZE / 8);
-                            //row_stride_bytes    <= i_W * i_words_per_channel * 8;
+                            //row_stride_bytes    <= i_W * i_words_per_channel * (WORD_SIZE / 8);
+                            row_stride_bytes    <= i_W * i_words_per_channel * 8;
 
                             //the total number of words in a kernel
                             kernel_words        <= i_H * i_W * i_words_per_channel;
@@ -210,7 +223,10 @@ module mmu #(
                             //row stride bytes is set to tile stride -> NOTE: get back to this
                             // nanda: according to the previous goldebrick before it was changed this is correct
                             // but now it should be : row_stride_bytes <= i_tile_stride * i_words_per_channel * (WORD_SIZE / 8);
-                            row_stride_bytes <= i_tile_stride;
+
+                            //so i_tile stride is like width of the tile
+                            //this works because we write 8 bytes of data times the 64 bit words per channel and then the stride is the actual size of the tile.
+                            row_stride_bytes <= i_tile_stride * i_words_per_channel * 8;
                         end 
                     end
                 end
@@ -220,7 +236,7 @@ module mmu #(
                 end
 
                 //COLLECT BEATS is just when you read from off chip memory -> you do this for load weights and load tile
-                COLLECT_BEATS: begin
+                RECEIVE_READ_DATA: begin
                     if (i_npu_rvalid) begin
 
                         //beat_toggle - we're writing values.
@@ -253,9 +269,11 @@ module mmu #(
                                         //increment curr_wgt_bank by 1 -> should be set to 0.
                                         curr_wgt_bank      <= curr_wgt_bank + 1;
 
-                                        //don't reset the curr_wgt_bank_addr instead you have to just switch to looking at a different bank.
+                                        //don't reset the curr_wgt_bank_addr instead you have to just switch to looking at a different bank but still need to increment
                                         //why is current bank_addr set to 0.
                                         //curr_wgt_bank_addr <= 0;
+                                        //the change will show up a cycle later.
+                                        wgt_bank_addr_tracker[curr_wgt_bank] <= wgt_bank_addr_tracker[curr_wgt_bank] + 1;
                                     end 
                                     else begin
                                         //same bank and advance to the next kernel slot
@@ -288,51 +306,77 @@ module mmu #(
 
                                 //incrementing the row_base_addr -> incrementing row_base_addr + update it to be the same as current.
                                 row_base_addr      <= row_base_addr + row_stride_bytes;
+
+                                //I think this is the reset  logic -> so it sets it up for the next read because we're receiving the last beat.
                                 row_beats_remaining <= row_beats_total;
                             //else we have 256 length beats
                             end else begin
                                 row_beats_remaining <= row_beats_remaining - 256;
-                                current_addr <= current_addr + (256 * (DATA_WIDTH / 8));
+                                //current_addr <= current_addr + (256 * (DATA_WIDTH / 8));
+                                current_addr <= current_addr + (256 * 4);
                             end
                         end
                     end
                 end
 
+                //okay this is send write addr logic
+                //this logic is not consistent with read request logic.
                 SEND_WRITE_ADDR: begin
+
+                    //if npu is awready, then ready to receivee values
                     if (i_npu_awready) begin
                         if (row_beats_remaining > 256) begin 
                             beats_per_burst <= 10'd256;
                         end else begin
                             beats_per_burst <= row_beats_remaining;
                         end
+                        //reset beat_toggle
                         beat_toggle <= 1'b0;
                     end
                 end
 
                 SEND_WRITE_DATA: begin
                     if (i_npu_wready) begin
+                        //keep track of beats per burst - this enables us to signal the wlast
                         beats_per_burst <= beats_per_burst - 1;
+                        
+
+                        //toggle the beats to keep track of whether we're sending the lower 32 bits or upper 32 bits
                         beat_toggle <= ~beat_toggle;
+
+                        //if we're dealing with the upper 32 bits, then increment the mem_if address to the next.
                         if(beat_toggle == 1'b1) begin
                             mem_if_addr <= mem_if_addr + 1; // both half_wrod sent
                         end
 
-                        // end of this burst
+                        //if we're at the last beat
                         if(beats_per_burst  == 1) begin
+
+                            //reset beat_toggle
                             beat_toggle <= 1'b0;
+                            
+                            //if there are less than 256 beats remaining
                             if(row_beats_remaining <= 256) begin
                                 //burst finished the current row
                                 //check if more rows left then jump to the next off-chip row base
+
+                                //if we are not at the height we want to be, we need to issue more burst requests
                                 if (row_counter != h_counter - 1) begin
+
+                                    //we increment row counter
                                     row_counter        <= row_counter + 1;
+
+                                    //this follow the read logic with resetting current_addr, row_base_addr
+                                    //this is reset logic cause we're done with the burst and the row so that's why this works.
                                     current_addr   <= row_base_addr + row_stride_bytes;
                                     row_base_addr      <= row_base_addr + row_stride_bytes;
                                     row_beats_remaining <= row_beats_total;
                                 end
                             end else begin
-                                //stay on the same row and continue with another 256-beat burst
+                                //we still have 256 beats amount or more to issue
                                 row_beats_remaining <= row_beats_remaining - 256;
-                                current_addr  <= current_addr + (256 * (DATA_WIDTH / 8));
+                                //current_addr  <= current_addr + (256 * (DATA_WIDTH / 8));
+                                current_addr  <= current_addr + (256 * 4);
                             end
                         end
                     end
@@ -370,8 +414,13 @@ module mmu #(
         o_npu_wlast   = 0;
         o_npu_wvalid  = 0;
         o_npu_bready  = 1;
+
+        //next state logic
         case (state)
+
+            //in the idle state
             IDLE: begin
+                //if load tile or load weights we want to send read requests from off chip memory
                 if (i_load_tile || i_load_weights) begin
                     next_state = SEND_READ_REQ;
                 end else if (i_store_tile) begin
@@ -384,14 +433,17 @@ module mmu #(
                 o_npu_araddr = current_addr; // the addr for this burst
                 //o_npu_arlen = beats_per_burst - 1; // number of beats in one burst
                  o_npu_arlen = (row_beats_remaining > 256) ? 8'd255 : (row_beats_remaining - 1);
-                o_npu_arsize = $clog2(DATA_WIDTH/8);
+                // o_npu_arsize = $clog2(DATA_WIDTH/8);
+                //always going to be 32-bit sized beats
+                o_npu_arsize = 3'b010;
                 o_npu_arvalid = 1'b1;
                 if(i_npu_arready) begin
-                    next_state = COLLECT_BEATS; 
+                    next_state = RECEIVE_READ_DATA; 
                 end
             end
 
-            COLLECT_BEATS: begin
+            RECEIVE_READ_DATA: begin
+                //signaling that we're ready to receive data
                 o_npu_rready = 1; 
                 // beat
                 if (i_npu_rvalid && beat_toggle == 1) begin
@@ -406,14 +458,22 @@ module mmu #(
                         o_wgt_sram_sel = curr_wgt_bank;
                     end
                 end
+
+                //the the data is valid and its the last, then check if we're at our last burst and if we're at our last burst we check the counter to see if we still have rows to process.
                 if (i_npu_rvalid && i_npu_rlast) begin
                     if (row_beats_remaining <= 256) begin
                         if (row_counter == h_counter - 1) begin
+
+                            //if we're done go to idle
                             next_state = IDLE;
+
+                            //signal done
                             o_done     = 1;
+                        //else stay in read request
                         end else begin
                             next_state = SEND_READ_REQ;
                         end
+                    //if there's more than 256 beats stay in the send read request,
                     end else begin
                         next_state = SEND_READ_REQ;
                     end
@@ -421,10 +481,12 @@ module mmu #(
             end
             SEND_WRITE_ADDR: begin
                 // send write address for store tile
-               
+                //write addr is set to current addr.               
                 o_npu_awaddr  = current_addr;
+
+                //if the beats remaining are greater than 256, then 255 beats
                 o_npu_awlen  = (row_beats_remaining > 256) ? 8'd255 : (row_beats_remaining - 1);
-                o_npu_awsize  = 'd2;
+                o_npu_awsize  = 3'b010;
                 o_npu_awvalid = 1'b1; // handshake happens when o_npu_awready is high and o_npu_awvalid is high
 
                 //fetch the first SRAM word while we wait for the address handshake
@@ -443,12 +505,18 @@ module mmu #(
 
                 o_npu_wvalid = 1'b1;
                 o_npu_wstrb  = 4'hF; // all bytes valid
+
+                //which set of 32 bits to send
                 if (beat_toggle == 1'b0) begin
                     o_npu_wdata = i_act_rdata[31:0];
                 end else begin
                     o_npu_wdata = i_act_rdata[63:32];
                 end
+
+                //set that we're writing the last beat
                 o_npu_wlast = (beats_per_burst == 1);
+
+                //if slave is receiving values
                 if (i_npu_wready) begin
                     if (beats_per_burst == 1) begin
                         // burst is complete
