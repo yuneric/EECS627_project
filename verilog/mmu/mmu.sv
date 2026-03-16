@@ -66,7 +66,8 @@ module mmu #(
         SEND_READ_REQ,  // drive AXI AR channel/ wait for arready handshake
         RECEIVE_READ_DATA, // AXI READ: wait for both beats to come back from the axi and then combine them together
         SEND_WRITE_ADDR, // one AXI write burst for the current row
-        SEND_WRITE_DATA //64-bit activation SRAM words into 32-bit AXI write split them
+        SEND_WRITE_DATA, //64-bit activation SRAM words into 32-bit AXI write split them
+        WAIT_WRITE_RESP // wait for the bvalid handshake
     } state_t;
 
     state_t state, next_state;
@@ -116,6 +117,8 @@ module mmu #(
     //2. Make read request and write request logic consistent
     //3. Incorporate bvalid + check that all the valid axi handshake signals are being used (like wlast)
     //4. FIX load weights logic to not be restricted by the row
+
+    //UPDATE: ADDED NPU bvalid BECAUSE WE DONT WANT TO ISSUE NEXT WRITE UNTIL BVALID SHOWS UP
 
 
     //okay now that I've looked through the code -> look through the stride logic and fix that -> then look through nanda.py to understand how it works
@@ -351,33 +354,36 @@ module mmu #(
 
                         //if we're at the last beat
                         if(beats_per_burst  == 1) begin
-
                             //reset beat_toggle
                             beat_toggle <= 1'b0;
-                            
-                            //if there are less than 256 beats remaining
-                            if(row_beats_remaining <= 256) begin
-                                //burst finished the current row
-                                //check if more rows left then jump to the next off-chip row base
+                        end
+                    end
+                end
+                
+                WAIT_WRITE_RESP: begin
+                    if (i_npu_bvalid) begin
+                        //if there are less than 256 beats remaining
+                        if(row_beats_remaining <= 256) begin
+                            //burst finished the current row
+                            //check if more rows left then jump to the next off-chip row base
 
-                                //if we are not at the height we want to be, we need to issue more burst requests
-                                if (row_counter != h_counter - 1) begin
+                            //if we are not at the height we want to be, we need to issue more burst requests
+                            if (row_counter != h_counter - 1) begin
 
-                                    //we increment row counter
-                                    row_counter        <= row_counter + 1;
+                                //we increment row counter
+                                row_counter        <= row_counter + 1;
 
-                                    //this follow the read logic with resetting current_addr, row_base_addr
-                                    //this is reset logic cause we're done with the burst and the row so that's why this works.
-                                    current_addr   <= row_base_addr + row_stride_bytes;
-                                    row_base_addr      <= row_base_addr + row_stride_bytes;
-                                    row_beats_remaining <= row_beats_total;
-                                end
-                            end else begin
-                                //we still have 256 beats amount or more to issue
-                                row_beats_remaining <= row_beats_remaining - 256;
-                                //current_addr  <= current_addr + (256 * (DATA_WIDTH / 8));
-                                current_addr  <= current_addr + (256 * 4);
+                                //this follow the read logic with resetting current_addr, row_base_addr
+                                //this is reset logic cause we're done with the burst and the row so that's why this works.
+                                current_addr   <= row_base_addr + row_stride_bytes;
+                                row_base_addr      <= row_base_addr + row_stride_bytes;
+                                row_beats_remaining <= row_beats_total;
                             end
+                        end else begin
+                            //we still have 256 beats amount or more to issue
+                            row_beats_remaining <= row_beats_remaining - 256;
+                            //current_addr  <= current_addr + (256 * (DATA_WIDTH / 8));
+                            current_addr  <= current_addr + (256 * 4);
                         end
                     end
                 end
@@ -519,23 +525,30 @@ module mmu #(
                 //if slave is receiving values
                 if (i_npu_wready) begin
                     if (beats_per_burst == 1) begin
-                        // burst is complete
-                        if (row_beats_remaining <= 256) begin
-                            // row is finished
-                            if (row_counter == h_counter - 1) begin
-                                next_state = IDLE;
-                                o_done     = 1;
-                            end else begin
-                                // more rows to fetch issue the next rows's write addr
-                                next_state = SEND_WRITE_ADDR;
-                            end
+                        // burst is complete, wait for bvalid
+                        next_state = WAIT_WRITE_RESP;
+                    end
+                end
+            end
+            
+            WAIT_WRITE_RESP: begin
+                if (i_npu_bvalid) begin
+                    // burst is complete
+                    if (row_beats_remaining <= 256) begin
+                        // row is finished
+                        if (row_counter == h_counter - 1) begin
+                            next_state = IDLE;
+                            o_done     = 1;
                         end else begin
-                            // row needs another burst 
+                            // more rows to fetch issue the next rows's write addr
                             next_state = SEND_WRITE_ADDR;
                         end
+                    end else begin
+                        // row needs another burst 
+                        next_state = SEND_WRITE_ADDR;
                     end
                 end
             end
         endcase
     end
-endmodule 
+endmodule
