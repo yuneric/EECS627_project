@@ -180,11 +180,11 @@ module mmu #(
                         // tile_stride * i_words_per_channel * (WORD_SIZE / 8) bytes for the tiles
                         current_addr <= i_addr;
                        
-                        //the total number of beats in a row.
-                        row_beats_total <= i_W * i_words_per_channel * 2;
+                        // //the total number of beats in a row.
+                        // row_beats_total <= i_W * i_words_per_channel * 2;
 
-                        //how many of the beats are remaining per row
-                        row_beats_remaining <= i_W * i_words_per_channel * 2;
+                        // //how many of the beats are remaining per row
+                        // row_beats_remaining <= i_W * i_words_per_channel * 2;
 
 
                         //row base addr. what's the difference between row_base_addr and current_addr -> NOTE: come back to this later.
@@ -194,11 +194,14 @@ module mmu #(
                         //if you load weights -> then you have to consider kernel
                         if (i_load_weights) begin
                             //this should be fine as long as all the rows in each kernel are traversed through
-                            h_counter           <= i_H * i_N;
+                            //h_counter           <= i_H * i_N;
+                            //do it based on kernel count instead
+                            h_counter <= i_N;
 
                             //row_stride_bytes word size is just 64.
                             //row_stride_bytes    <= i_W * i_words_per_channel * (WORD_SIZE / 8);
-                            row_stride_bytes    <= i_W * i_words_per_channel * 8;
+                            // row_stride_bytes    <= i_W * i_words_per_channel * 8;
+                            row_stride_bytes     <= i_H * i_W * i_words_per_channel * 8;
 
                             //the total number of words in a kernel
                             kernel_words        <= i_H * i_W * i_words_per_channel;
@@ -218,6 +221,12 @@ module mmu #(
 
                             //replacing with wgt_bank_addr because curr_wgt_bank_addr doesn't keep state (addr of the banks when you start writing back to bank 0) like when you're loading 64+ kernels
                             wgt_bank_addr_tracker <= '0;
+
+                            //the total number of beats in a row.
+                            row_beats_total <= i_H * i_W * i_words_per_channel * 2;
+
+                            //how many of the beats are remaining per row
+                            row_beats_remaining <= i_H * i_W * i_words_per_channel * 2;
                         end else begin
 
                             //else we just have a counter on the height
@@ -230,6 +239,12 @@ module mmu #(
                             //so i_tile stride is like width of the tile
                             //this works because we write 8 bytes of data times the 64 bit words per channel and then the stride is the actual size of the tile.
                             row_stride_bytes <= i_tile_stride * i_words_per_channel * 8;
+
+                            //the total number of beats in a row.
+                            row_beats_total <= i_W * i_words_per_channel * 2;
+
+                            //how many of the beats are remaining per row
+                            row_beats_remaining <= i_W * i_words_per_channel * 2;
                         end 
                     end
                 end
