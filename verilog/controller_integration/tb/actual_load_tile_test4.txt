@@ -1,0 +1,4 @@
+word_0: 0101fefeff02fe00
+word_1: 00ffff02fc00fe01
+word_2: fffefefcfc03ff00
+word_3: fefcff01fcfefdfe

@@ -1,0 +1,290 @@
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Chronologic VCS simulator copyright 1991-2025
+Contains Synopsys proprietary information.
+Compiler version X-2025.06-1_Full64; Runtime version X-2025.06-1_Full64;  Mar 17 19:02 2026
+*Verdi* Loading libsscore_vcs202506.so
+FSDB Dumper for VCS, Release Verdi_X-2025.06-1, Linux x86_64/64bit, 07/19/2025
+(C) 1996 - 2025 by Synopsys, Inc.
+*Verdi* FSDB WARNING: The FSDB file already exists. Overwriting the FSDB file may crash the programs that are using this file.
+*Verdi* : Create FSDB file 'integrated_tb.fsdb'
+*Verdi* : Begin traversing the scope (controller_integration_tb), layer (0).
+*Verdi* : End of traversing.
+*Verdi* : Begin traversing the MDAs, layer (0).
+*Verdi* : Enable +mda and +packedmda dumping.
+*Verdi* : End of traversing the MDAs.
+Loading memory file: controller_integration_sim.mem
+Using trace output file: controller_integration_sim.base.trace
+Using memory access output file: controller_integration_sim.base.memacc
+START
+--- Starting Test 0 ---
+TB MAILBOX: Loading memory files for Test 0...
+Parsed Config -> N:2 H:3 W:3 C:8
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 0...
+PASS load_tile test0
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 0 
+PASS load_weights test0
+Storing tile!
+TB MAILBOX: Verifying Store Tile for Test 0 
+PASS store_tile test0
+Reg Vals!
+command_reg:          0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0008
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0003
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0008
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0003
+weight_cfg_N_reg:     0002
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0003
+weight_cfg_C_reg:     0008
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 1 ---
+TB MAILBOX: Loading memory files for Test 1...
+Parsed Config -> N:2 H:3 W:3 C:9
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 1...
+PASS load_tile test1
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 1 
+SPASS load_weights test1
+toring tile!
+TB MAILBOX: Verifying Store Tile for Test 1 
+PASS store_tile test1
+Reg Vals!
+command_reg:          0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0009
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0003
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0009
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0003
+weight_cfg_N_reg:     0002
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0003
+weight_cfg_C_reg:     0009
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 2 ---
+TB MAILBOX: Loading memory files for Test 2...
+Parsed Config -> N:2 H:3 W:16 C:64
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 2...
+PASS load_tile test2
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 2 
+Storing tile!
+Reg Vals!
+command_reg: PASS load_weights test2
+         0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0040
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0010
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0040
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0010
+weight_cfg_N_reg:     0002
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0010
+weight_cfg_C_reg:     0040
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 3 ---
+TB MAILBOX: Loading memory files for Test 3...
+Parsed Config -> N:2 H:3 W:17 C:64
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 3...
+PASS load_tile test3
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 3 
+Storing tile!
+Reg Vals!
+command_reg:     PASS load_weights test3
+     0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0040
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0011
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0040
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0011
+weight_cfg_N_reg:     0002
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0011
+weight_cfg_C_reg:     0040
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 4 ---
+TB MAILBOX: Loading memory files for Test 4...
+Parsed Config -> N:16 H:3 W:3 C:8
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 4...
+PASS load_tile test4
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 4 
+Storing tPASS load_weights test4
+ile!
+TB MAILBOX: Verifying Store Tile for Test 4 
+PASS store_tile test4
+Reg Vals!
+command_reg:          0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0008
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0003
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0008
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0003
+weight_cfg_N_reg:     0010
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0003
+weight_cfg_C_reg:     0008
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 5 ---
+TB MAILBOX: Loading memory files for Test 5...
+Parsed Config -> N:64 H:3 W:3 C:8
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 5...
+PASS load_tile test5
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 5 
+Storing tile!
+Reg Vals!
+commPASS load_weights test5
+and_reg:          0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0008
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0003
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0008
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0003
+weight_cfg_N_reg:     0040
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0003
+weight_cfg_C_reg:     0008
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 6 ---
+TB MAILBOX: Loading memory files for Test 6...
+Parsed Config -> N:2 H:2 W:128 C:9
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 6...
+PASS load_tile test6
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 6 
+Storing tile!
+Reg Vals!
+command_reg:          0003
+PASS load_weights test6
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0009
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0080
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0009
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0080
+weight_cfg_N_reg:     0002
+weight_cfg_H_reg:     0002
+weight_cfg_W_reg:     0080
+weight_cfg_C_reg:     0009
+weight_address_reg:   0000
+status_reg:           001C
+--- Starting Test 7 ---
+TB MAILBOX: Loading memory files for Test 7...
+Parsed Config -> N:72 H:3 W:3 C:8
+Loading tile!
+TB MAILBOX: Verifying Load Tile for Test 7...
+PASS load_tile test7
+Loading weights!
+TB MAILBOX: Verifying Load Weights for Test 7 
+Storing tile!
+Reg Vals!
+command_rPASS load_weights test7
+eg:          0003
+comp_cfg_reg:         0000
+comp_cfg_H_reg:       0000
+comp_cfg_W_reg:       0000
+comp_cfg_C_reg:       0000
+input_tile_cfg_H_reg: 0002
+input_tile_cfg_W_reg: 0002
+input_tile_cfg_C_reg: 0008
+input_tile_addr_reg:  0000
+input_tile_mat_W_reg: 0003
+output_tile_cfg_H_reg:0002
+output_tile_cfg_W_reg:0002
+output_tile_cfg_C_reg:0008
+output_tile_addr_reg: 0000
+output_tile_mat_W_reg:0003
+weight_cfg_N_reg:     0048
+weight_cfg_H_reg:     0003
+weight_cfg_W_reg:     0003
+weight_cfg_C_reg:     0008
+weight_address_reg:   0000
+status_reg:           001C
+All tests complete!
+DONE
+CPU TRAP HIT - SIMULATION FINISHED
+$finish called from file "verilog/controller_integration/tb/controller_integration_tb.sv", line 528.
+$finish at simulation time           2317720000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 2317720000 ps
+CPU Time:      2.400 seconds;       Data structure size:   0.6Mb
+Tue Mar 17 19:02:05 2026

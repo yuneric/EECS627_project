@@ -1,0 +1,24 @@
+rc file Version 1.0
+
+[Design]
+COMPILE_PATH=/afs/umich.edu/class/eecs627/w26/groups/group7/project
+VCS_HOME=/usr/caen/vcs-2025.06-1
+VERDI_HOME=/usr/caen/verdi-2025.06-1
+SystemC=FALSE
+UUM=FALSE
+KDB=TRUE
+USE_NOVAS_HOME=FALSE
+COSIM=FALSE
+TOP=controller_integration_tb picorv32_regs 
+OPTION=-ssv -ssy 
+ELAB_OPTION=-ssv -ssy 
+ELAB=TRUE
+COMMON_ELAB=TRUE
+SIMV_WRAPPER=FALSE
+ELABCOM_PARTAIL_LOAD=TRUE
+[Value]
+WREALX=ffff534e50535f58
+WREALZ=ffff534e50535f5a
+
+[CompInfo]
+FLOW_OPTS=-kdb=common_elab -ssv -ssy 

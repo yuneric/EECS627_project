@@ -1,0 +1,10 @@
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/axi/axi_arbiter.v
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller/controller.sv
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller_integration/tb/controller_integration_tb.sv
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/cpu/picorv32.v
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/memory/sp2048x64m8.v
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/memory/weight_mem_8bank.v
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/mmio/address_decoder.sv
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/mmio/mmio.sv
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/mmu/mmu.sv
+/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/standard.vh
