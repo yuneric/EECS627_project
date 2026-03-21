@@ -4,7 +4,8 @@ module computation_overseer #(
     parameter DIM_WIDTH          = 10,
     parameter MEM_IF_ADDR_WIDTH  = 12,
     parameter WT_ADDR_WIDTH      = 11,
-    parameter WORD_SIZE          = 64
+    parameter WORD_SIZE          = 64,
+    parameter SHIFT_WIDTH   = 5
 )(
     input  wire                                  i_clk, 
     input  wire                                  i_rst_n,
@@ -15,7 +16,7 @@ module computation_overseer #(
     input logic [1:0]            i_comp_padding          , //the padding comes from controller (tells how much padding is used - set by the user)
     input logic                  i_comp_maxpool_en       , //whether we want maxpooling enabled from the controller
     input logic                  i_comp_relu_en          , //whether we want relu enabled from the controller
-    input logic [4:0]            i_comp_scale_amt        , //the scale amount we'd need
+    input logic [SHIFT_WIDTH-1:0] i_comp_scale_amt       , //the scale amount we'd need
     input logic [DIM_WIDTH-1:0]  i_comp_Hi               , //input height from controller
     input logic [DIM_WIDTH-1:0]  i_comp_Wi               , //input width from controller
     input logic [DIM_WIDTH-1:0]  i_comp_Hf               , //filter height
@@ -26,15 +27,6 @@ module computation_overseer #(
     input logic [DIM_WIDTH-1:0]  i_comp_num_kernels      , //the number of kernels - from user via mmio
     output                       o_comp_done             , //sending the controller that the computation is done - handshake that helps trigger next set of data/signals
 
-    // config from controller
-    // input  wire                                  i_start,
-    // input  wire [DIM_FIELD_WIDTH-1:0]            i_cfg_tile_H, i_cfg_tile_W,
-    // input  wire [DIM_FIELD_WIDTH-1:0]            i_cfg_Hf, i_cfg_Wf,
-    // input  wire [DIM_FIELD_WIDTH-1:0]            i_cfg_stride, i_cfg_padding,
-    // input  wire [WORD_IDX_WIDTH-1:0]             i_cfg_words_ci,
-    // input  wire [DIM_FIELD_WIDTH-1:0]            i_cfg_Co, i_cfg_Ho, i_cfg_Wo,
-    // input  wire                                  i_cfg_relu_en, i_cfg_maxpool_en,
-
     //we have to send rd_addr and rd_en to mem_if and activation data is sent to the systolic array units
     output  [MEM_IF_ADDR_WIDTH-1:0] o_comp_waddr, //write the drain data to mem_if
     input   o_comp_wen, //write enable
@@ -42,70 +34,102 @@ module computation_overseer #(
     input  [MEM_IF_ADDR_WIDTH-1:0] o_comp_raddr, //sending read addr to read activation data
     input  o_comp_ren, //sending read enable
 
-    //we don't access weights directly from here we just progate signals to im2col - like information it needs
-    // output reg  [WT_ADDR_WIDTH*NUM_ARRAYS-1:0]   o_wt_rd_addr,
-    // output reg  [NUM_ARRAYS-1:0]                 o_wt_rd_en,
-    // input  wire [DATA_WIDTH*NUM_ARRAYS-1:0]      i_wt_rd_data,
+    //SA slice is one slice
+    //SIGNALS TO AND FROM sa slice
+    //cdc handshake
+    output  logic                                 o_cdc_req, 
+    input   logic                                 i_cdc_ack,
+    output  logic                                 o_relu_en,
+    output  logic [SHIFT_WIDTH-1:0]               o_shift_by,
+    output  logic                                 o_maxpool_en,
 
-    // SA FIFO writes
-    // output reg  [NUM_ARRAYS-1:0]                 o_sa_wr_en,  
-    // output reg  [DATA_WIDTH-1:0]                 o_sa_wr_act_data,
-    // output reg  [DATA_WIDTH*NUM_ARRAYS-1:0]      o_sa_wr_wt_data,
-    // output reg  [NUM_ARRAYS-1:0]                 o_sa_wr_data_last, 
-    // input  wire [NUM_ARRAYS-1:0]                 i_sa_fifo_full, //gets if sa_fifo is full
+    // Input Fifo
+    output  logic [DIM-1:0] o_push_data_last,
+    output  logic [DIM-1:0] o_push_en,
+    input logic [DIM-1:0] i_push_fifo_full, //we need to get stuff from of our slices
 
-    // // SA outputs
-    // input  wire [NUM_ARRAYS-1:0]                 i_sa_valid_out,
-    // input  wire [DATA_WIDTH*NUM_ARRAYS-1:0]      i_sa_data_out,
-    // input  wire [NUM_ARRAYS-1:0]                 i_sa_flush_done,
+    // Local weight SRAM ports - should get wt_sram_rd addr and en from im2col
+    //weight addr rd addr and sram rd en
+    output  logic [WT_ADDR_WIDTH-1:0] o_wt_sram_rd_addr,
+    output  logic  o_wt_sram_rd_en,
 
-    //from and to the SA System:
-    //to SA System:
-    output [NUM_ARRAYS-1:0] o_wr_en, //this is a signal telling the SA to accept writes from mem_if - which computation overseer is responsible for orchestrating
-    output o_relu_en, //enabling relu
-    output [5:0] o_shift_amt, //telling SA slice how many things to shift
-    output o_maxpool_en, //enabling maxpool
-
-    //from SA System
-    //drain data coming from SA system -> to store activation data
-    input [WORD_SIZE-1:0] i_data_out,
-    input [NUM_ARRAYS-1:0] i_fifo_out_empty,
-
-
-    //already defined this above
-    // // output SRAM
-    // output reg  [OUT_ADDR_WIDTH-1:0]             o_out_wr_addr,
-    // output reg                                   o_out_wr_en,
-    // output reg  [DATA_WIDTH-1:0]                 o_out_wr_data,
+    //notes need to pop_en to enable drain
+    //pop_data is the data sent from 
+    // Output Fifo
+    output logic [WORD_SIZE-1:0] o_pop_data,
+    output logic o_pop_en,
+    input logic  [DIM-1:0] i_pop_empty
 
     // misc -we're gonna still use this for now
-    output wire [NUM_ARRAYS-1:0]                 o_array_active,
-    output wire                                  o_busy,
-    //output wire                                  o_done
+    output wire [NUM_ARRAYS-1:0] o_array_active,
+
+
+    //from sa_slice - async fifos - need to edit in systolic array slice
+    input logic i_almost_empty, //2 (max_pool enabled)
+    input logic i_rd_full, //8 have all data.
+    input logic i_rd_empty, //async 
+
+
 );
 
+
     // FSM
-    localparam [3:0]
-        IDLE       = 0, CONFIG     = 1, ST_SETUP  = 2, KG_SETUP  = 3,
-        FEED_ADDR  = 4, FEED_WRITE = 5, DRAIN     = 6, OUTPUT_WB = 7,
-        KG_NEXT    = 8, ST_NEXT    = 9;
+    // localparam [3:0]
+    //     IDLE       = 0, CONFIG     = 1, ST_SETUP  = 2, KG_SETUP  = 3,
+    //     FEED_ADDR  = 4, FEED_WRITE = 5, DRAIN     = 6, OUTPUT_WB = 7,
+    //     KG_NEXT    = 8, ST_NEXT    = 9;
+    localparam [2:0] IDLE = 0, SETUP = 1, TILE_SETUP = 2, COMPUTE = 3, WAIT_FOR_DRAIN = 4, DRAIN = 5;
 
-    reg [3:0] state, nxt;
+    //state logic
+    logic [2:0] state, next_state;
 
-    // Latched in i_start inputs (num_st == num_subtile)
-    reg [DIM_FIELD_WIDTH-1:0] d_Ho, d_Wo, d_Co;
-    reg [DIM_FIELD_WIDTH-1:0] num_stx, num_sty, num_kg;
-    reg                       d_relu, d_maxpool;
+    // Latched in i_start inputs
+    logic [DIM_WIDTH-1:0] d_comp_Ho, d_comp_Wo, d_comp_num_kernels;
+    logic [DIM_WIDTH-1:0] num_tiles_in_width, num_tiles_in_height, num_kernel_groups, num_kernels_per_group;
 
-    reg [DIM_FIELD_WIDTH-1:0] st_x, st_y, kg_idx;
+    //number of kernels processed will help us figure out which systolic arrays are active
+    logic [DIM_WIDTH-1:0] kernels_processed, kernels_remaining; //keep track of how many kernels we've processed
+
+
+    //tbd if we need this 
+    logic [(DIM_WIDTH*2)-1:0] num_tiles;
+    logic  d_comp_relu_en, d_comp_maxpool_en;
+    logic  [SHIFT_WIDTH-1:0] d_comp_scale_amt;
+
+
+    //tracker variables - the curr_tile_x, curr_tile_y, 
+    logic [DIM_WIDTH-1:0] curr_tile_x, curr_tile_y, curr_kernel_group;
+
+
     // x_bound = min(Wo - top_left_output_pixel_x - 1, 3)
     // y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
-    reg [1:0]                 x_bound; 
-    reg                       y_bound; 
+    //2x4 so have to get the boundary indices
+    // logic [1:0]                 x_bound; 
+    // logic                       y_bound; 
+
+    //im2col - start that goes into im2colgen
+    logic im2col_gen_inputs_valid;
+
+    assign im2col_gen_inputs_valid = (state == COMPUTE);
+
+
 
     // Indicates the active arrays 
-    reg [NUM_ARRAYS-1:0] active;
+    logic [NUM_ARRAYS-1:0] active;
     assign o_array_active = active;
+
+    //next step is figuring out what setting logic does.
+    // array_enable = [0] * num_arrays
+    //     for array in range(num_arrays):
+    //         if(kernels_processed < Co):
+    //             array_enable[array] = 1
+    //             kernels_processed += dim
+
+    //ok, so from my understanding basically 1 -> 1m2 col is 64 kernels processed at once. 
+    //we want to set it up in 
+
+    //when send advance, you allow next weight address to be calculated.
+
 
     wire fifo_stall = |(i_sa_fifo_full & active);
 
@@ -119,7 +143,7 @@ module computation_overseer #(
     reg [3:0]              wb_pix, wb_arr;
 
     //why no assign statements here
-    wire [DIM_FIELD_WIDTH-1:0] co_remaining = d_Co - kg_idx * NUM_ARRAYS;
+    wire [DIM_FIELD_WIDTH-1:0] co_remaining = d_comp_num_kernels - curr_kernel_group * NUM_ARRAYS;
     wire [3:0] n_active_m1 = (co_remaining >= NUM_ARRAYS) ? (NUM_ARRAYS - 1) : co_remaining[3:0] - 1;
 
     wire ic_start, ic_advance;
@@ -129,97 +153,233 @@ module computation_overseer #(
     wire                      ic_wt_valid;
     wire                      ic_data_last, ic_addr_valid, ic_busy, ic_done;
 
-    wire [WT_ADDR_WIDTH-1:0] ksz = i_cfg_Hf * i_cfg_Wf * i_cfg_words_ci;
+    wire [WT_ADDR_WIDTH-1:0] ksz = i_cfg_Hf * i_comp_Wf * i_cfg_words_ci;
     reg  [WT_ADDR_WIDTH-1:0] kg_wt_off;
 
-    // Handles all of the address gen for one tile of the output (one systolic array drain)
-    im2col_gen #(
-        .DIM(DIM), .DIM_FIELD_WIDTH(DIM_FIELD_WIDTH),
-        .ACT_ADDR_WIDTH(ACT_ADDR_WIDTH), .WT_ADDR_WIDTH(WT_ADDR_WIDTH),
-        .WORD_IDX_WIDTH(WORD_IDX_WIDTH)
-    ) u_im2col (
-        .i_clk(i_clk), .i_rst_n(i_rst_n),
-        .i_cfg_tile_H(i_cfg_tile_H), .i_cfg_tile_W(i_cfg_tile_W),
-        .i_cfg_Hf(i_cfg_Hf), .i_cfg_Wf(i_cfg_Wf),
-        .i_cfg_stride(i_cfg_stride), .i_cfg_padding(i_cfg_padding),
-        .i_cfg_words_ci(i_cfg_words_ci), .i_cfg_Co(i_cfg_Co),
-        .i_cfg_sub_tile_x(st_x), .i_cfg_sub_tile_y(st_y),
-        .i_cfg_x_bound(x_bound), .i_cfg_y_bound(y_bound),
-        .i_start(ic_start), .i_advance(ic_advance),
-        .o_act_addr(ic_act_addr), .o_act_valid(ic_act_valid),
-        .o_wt_addr(ic_wt_addr), .o_wt_valid(ic_wt_valid),
-        .o_data_last(ic_data_last), .o_addr_valid(ic_addr_valid),
-        .o_busy(ic_busy), .o_done(ic_done)
+    im2col_gen u_im2col(
+        .i_clk(i_clk),
+        .i_rst_n(i_rst_n),i_cfg_padding
+        .i_cfg_tile_H(i_comp_Hi), 
+        .i_cfg_tile_W(i_comp_Wi),
+        .i_cfg_Hf(i_comp_Hf),
+        .i_cfg_Wf(i_comp_Wf),
+        .i_cfg_stride(i_comp_stride),
+        .i_cfg_padding(i_comp_padding),
+        .i_cfg_words_ci(i_comp_words_per_channel),
+        .i_cfg_num_kernels_per_group(i_comp_num_kernels),
+        .i_cfg_sub_tile_x(curr_tile_x),
+        .i_cfg_sub_tile_y(curr_tile_y),
+        // .i_cfg_x_bound(x_bound),
+        // .i_cfg_y_bound(y_bound),
+        .i_start(im2col_gen_inputs_valid), //start.
+        // .i_advance(ic_advance),
+        .o_act_addr(ic_act_addr),
+        .o_act_valid(ic_act_valid),
+        .o_wt_addr(ic_wt_addr),
+        .o_wt_valid(ic_wt_valid),
+        .o_data_last(ic_data_last),
+        .o_addr_valid(ic_addr_valid),
+        // .o_busy(ic_busy), 
+        .o_done(ic_done)
     );
 
     assign ic_start   = (state == KG_SETUP);
     assign ic_advance = (state == FEED_WRITE) && !fifo_stall;
 
+    //start with next state and go from there
+    // always @(*) begin
+    //     next_state = state;
+    //     case (state)
+    //         IDLE:       if (i_start) nxt = CONFIG;
+    //         CONFIG:     nxt = ST_SETUP;
+    //         ST_SETUP:   nxt = KG_SETUP;
+    //         KG_SETUP:   nxt = FEED_ADDR;
+    //         FEED_ADDR:  if (ic_addr_valid) nxt = FEED_WRITE;
+    //         FEED_WRITE: begin
+    //             if (fifo_stall)        nxt = FEED_WRITE;
+    //             else if (p_last)       nxt = DRAIN;
+    //             else                   nxt = FEED_ADDR;
+    //         end
+    //         DRAIN:      if ((i_sa_flush_done & active) == active) nxt = OUTPUT_WB;
+    //         OUTPUT_WB:  if (wb_pix == DIM-1 && wb_arr == n_active_m1) nxt = KG_NEXT;
+    //         KG_NEXT:    nxt = (curr_kernel_group == num_kg - 1) ? ST_NEXT : KG_SETUP;
+    //         ST_NEXT: begin
+    //             if (curr_tile_x == num_tiles_in_width - 1 && curr_tile_y == num_tiles_in_height - 1) nxt = IDLE;
+    //             else nxt = ST_SETUP;
+    //         end
+    //         default:    nxt = IDLE;
+    //     endcase
+    // end
+
+    //so there is moving to next kernel
+    //there is moving to next tile -> both x and y
+
+    //want to assign these to tge latched in values from the idle state
+    assign o_relu_en = d_comp_relu_en;
+    assign o_shift_by = d_comp_scale_amt;
+    assign o_maxpool_en = d_comp_maxpool_en;
+
+    //set the request
+    assign o_cdc_req = (state == SETUP);
+
+    //when in compute, my understanding is you set im2col_advanc
+    //next_state logic.
     always @(*) begin
-        nxt = state;
+        next_state = state;
         case (state)
-            IDLE:       if (i_start) nxt = CONFIG;
-            CONFIG:     nxt = ST_SETUP;
-            ST_SETUP:   nxt = KG_SETUP;
-            KG_SETUP:   nxt = FEED_ADDR;
-            FEED_ADDR:  if (ic_addr_valid) nxt = FEED_WRITE;
-            FEED_WRITE: begin
-                if (fifo_stall)        nxt = FEED_WRITE;
-                else if (p_last)       nxt = DRAIN;
-                else                   nxt = FEED_ADDR;
-            end
-            DRAIN:      if ((i_sa_flush_done & active) == active) nxt = OUTPUT_WB;
-            OUTPUT_WB:  if (wb_pix == DIM-1 && wb_arr == n_active_m1) nxt = KG_NEXT;
-            KG_NEXT:    nxt = (kg_idx == num_kg - 1) ? ST_NEXT : KG_SETUP;
-            ST_NEXT: begin
-                if (st_x == num_stx - 1 && st_y == num_sty - 1) nxt = IDLE;
-                else nxt = ST_SETUP;
-            end
-            default:    nxt = IDLE;
+            IDLE:
+                if(i_comp_compute_start) begin
+                   next_state = SETUP;
+                end
+            SETUP:
+                //you basically latch in the signals here 
+                if(i_cdc_ack) begin
+                    next_state = COMPUTE;
+                end
+            TILE_SETUP:
+                //if we're done go to IDLE, else go to COMPUTE
+                if(kernels_processed == d_comp_num_kernels) begin
+                    next_state = IDLE;
+                end else begin
+                    next_state = COMPUTE;
+                end
+            COMPUTE:
+                //if busy and not
+                //if done then move to wait for drain
+                if(ic_done) begin
+                    next_state = WAIT_FOR_DRAIN;
+                end
+            //have this state because our fifo's are async
+            WAIT_FOR_DRAIN:
+                //if not empty - we move to drain
+                // if(~(&i_pop_empty)) begin
+                //     next_state = DRAIN;
+                // end
+                //now waiting for all the output data to arrive before we move to the drain state
+                if((d_comp_maxpool_en && i_almost_empty) || i_rd_full) begin
+                    next_state = DRAIN;
+                end
+            DRAIN:
+                //if we've emp
+                //if all the slice's asyncs are empty
+                // if(&i_pop_empty) begin
+                //     next_state = TILE_SETUP;
+                // end
+                if(i_rd_empty) begin
+                    next_state = TILE_SETUP;
+                end
         endcase
     end
 
     always @(posedge i_clk or negedge i_rst_n)
         if (!i_rst_n) state <= IDLE;
-        else        state <= nxt;
+        else        state <= next_state;
 
     // Latch in inputs upon a i_start
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            d_Ho <= 0; d_Wo <= 0; d_Co <= 0;
-            num_stx <= 0; num_sty <= 0; num_kg <= 0;
-            d_relu <= 0; d_maxpool <= 0;
-        end else if (state == IDLE && i_start) begin
-            d_Ho    <= i_cfg_Ho;
-            d_Wo    <= i_cfg_Wo;
-            d_Co    <= i_cfg_Co;
-            d_relu  <= i_cfg_relu_en;
-            d_maxpool <= i_cfg_maxpool_en;
+            d_comp_Ho<= 0; 
+            d_comp_Wo<= 0;
+            d_comp_num_kernels <= 0;
+            num_tiles_in_width <= 0;
+            num_tiles_in_height <= 0;
+            num_kg <= 0;
+            d_comp_relu_en <= 0;
+            d_comp_maxpool_en <= 0;
+        //latched in for setup
+        end else if (state == IDLE && i_comp_compute_start) begin
+            d_comp_Ho   <= i_comp_Ho;
+            d_comp_Wo   <= i_comp_Wo;
+            d_comp_num_kernels    <= i_comp_num_kernels;
+            d_comp_relu_en  <= i_comp_relu_en;
+            d_comp_maxpool_en <= i_comp_maxpool_en;
             // tiles_in_width = math.ceil(Wo/4) # how many tiles are in the output width-wise
-            num_stx <= (i_cfg_Wo + 3) >> 2;
+            num_tiles_in_width <= (i_comp_Wo + 3) >> 2;
             // tiles_in_height = math.ceil(Ho/2) # how many tiles are in the output height-wise
-            num_sty <= (i_cfg_Ho + 1) >> 1;
+            num_tiles_in_height <= (i_comp_Ho + 1) >> 1;
             // kernel_groups = math.ceil(Co/(dim*num_arrays)) # how many kernel groups we have to iterate through
-            num_kg  <= (i_cfg_Co + NUM_ARRAYS - 1) / NUM_ARRAYS;
+            //we have 8 (2x4) outputs at a time and we have 8 arrays, so the number of groups outside this.
+            num_kernel_groups  <= (i_comp_num_kernels / 64);
+
+            d_comp_scale_amt <= i_comp_scale_amt;
+
+            //we want to reset kernel's processed because we haven't use it yet. 
+            kernels_processed <= '0;
+
+            //want to reset these signals as well:
+            curr_tile_x <= '0;
+            curr_tile_y <= '0;
+            curr_kernel_group <= '0;
+
+            //kernels per group;
+            //if there is 64 or less, then you just have 1 num_kernel_groups
+            //you will set the rest in tile setup
+            if(i_comp_num_kernels <= 64) begin
+                num_kernels_per_group <= i_comp_num_kernels;
+                active[0] <= (i_comp_num_kernels > 0);  // Array 0 handles kernels 1-8
+                active[1] <= (i_comp_num_kernels > 8);  // Array 1 handles kernels 9-16
+                active[2] <= (i_comp_num_kernels > 16); // Array 2 handles kernels 17-24
+                active[3] <= (i_comp_num_kernels > 24); // Array 3 handles kernels 25-32
+                active[4] <= (i_comp_num_kernels > 32); // Array 4 handles kernels 33-40
+                active[5] <= (i_comp_num_kernels > 40); // Array 5 handles kernels 41-48
+                active[6] <= (i_comp_num_kernels > 48); // Array 6 handles kernels 49-56
+                active[7] <= (i_comp_num_kernels > 56); // Array 7 handles kernels 57-64
+            end else begin
+                num_kernels_per_group <= 64;
+                active <= '1;
+            end
+        end else if (state == TILE_SETUP) begin
+            //need to update kernels_processed -> should be adding num_kernels_per_group
+            kernels_processed <= kernels_processed + num_kernels_per_group;
+
+            //INCREMENT kernel group
+            curr_kernel_group <= curr_kernel_group + 1; 
+            
+            //set num_kernels_per_group if you still need go to a new group.
+            if((d_comp_num_kernels - (kernels_processed + num_kernels_per_group)) <= 64) begin
+                num_kernels_per_group <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group));
+                num_kernels_per_group <= i_comp_num_kernels;
+                active[0] <= (i_comp_num_kernels > 0);  // Array 0 handles kernels 1-8
+                active[1] <= (i_comp_num_kernels > 8);  // Array 1 handles kernels 9-16
+                active[2] <= (i_comp_num_kernels > 16); // Array 2 handles kernels 17-24
+                active[3] <= (i_comp_num_kernels > 24); // Array 3 handles kernels 25-32
+                active[4] <= (i_comp_num_kernels > 32); // Array 4 handles kernels 33-40
+                active[5] <= (i_comp_num_kernels > 40); // Array 5 handles kernels 41-48
+                active[6] <= (i_comp_num_kernels > 48); // Array 6 handles kernels 49-56
+                active[7] <= (i_comp_num_kernels > 56); // Array 7 handles kernels 57-64
+            end else begin
+                num_kernels_per_group <= 64;
+                active <= '1;
+            end
+
+            //need to set up curr_tile_y
+            //curr_tile_x
+            if (curr_tile_x < num_tiles_in_width - 1)
+                curr_tile_x <= curr_tile_x + 1;
+                else begin
+                    curr_tile_x <= 0;
+                    curr_tile_y <= curr_tile_y + 1;
+                end
+
         end
     end
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            st_x <= 0; st_y <= 0; kg_idx <= 0;
+            curr_tile_x <= 0; curr_tile_y <= 0; curr_kernel_group <= 0;
         end else case (state)
-            CONFIG:   begin st_x <= 0; st_y <= 0; kg_idx <= 0; end
-            ST_SETUP: kg_idx <= 0;
-            KG_SETUP: kg_wt_off <= kg_idx * ksz;
+            CONFIG:   begin curr_tile_x <= 0; curr_tile_y <= 0; curr_kernel_group <= 0; end
+            ST_SETUP: curr_kernel_group <= 0;
+            KG_SETUP: kg_wt_off <= curr_kernel_group * ksz;
             ST_NEXT: begin
-                if (st_x < num_stx - 1)
-                    st_x <= st_x + 1;
+                if (curr_tile_x < num_tiles_in_width - 1)
+                    curr_tile_x <= curr_tile_x + 1;
                 else begin
-                    st_x <= 0;
-                    st_y <= st_y + 1;
+                    curr_tile_x <= 0;
+                    curr_tile_y <= curr_tile_y + 1;
                 end
             end
-            KG_NEXT: kg_idx <= kg_idx + 1;
+            KG_NEXT: curr_kernel_group <= curr_kernel_group + 1;
             default: ;
         endcase
     end
@@ -228,9 +388,9 @@ module computation_overseer #(
     // y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
     always @(posedge i_clk) begin
         if (state == CONFIG || state == ST_SETUP) begin
-            x_bound <= ((d_Wo - {st_x, 2'b00}) > 4) ? 2'd3
-                     : d_Wo - {st_x, 2'b00} - 1;
-            y_bound <= ((d_Ho - {st_y, 1'b0}) >= 2) ? 1'b1 : 1'b0;
+            x_bound <= ((d_comp_Wo- {curr_tile_x, 2'b00}) > 4) ? 2'd3
+                     : d_comp_Wo- {curr_tile_x, 2'b00} - 1;
+            y_bound <= ((d_comp_Ho- {curr_tile_y, 1'b0}) >= 2) ? 1'b1 : 1'b0;
         end
     end
 
@@ -310,11 +470,11 @@ module computation_overseer #(
 
     wire [1:0]                 wb_px = wb_pix[1:0];
     wire                       wb_py = wb_pix[2];
-    wire [DIM_FIELD_WIDTH+1:0] abs_x = {st_x, 2'b00} + {{DIM_FIELD_WIDTH{1'b0}}, wb_px};
-    wire [DIM_FIELD_WIDTH:0]   abs_y = {st_y, 1'b0}   + {{DIM_FIELD_WIDTH{1'b0}}, wb_py};
+    wire [DIM_FIELD_WIDTH+1:0] abs_x = {curr_tile_x, 2'b00} + {{DIM_FIELD_WIDTH{1'b0}}, wb_px};
+    wire [DIM_FIELD_WIDTH:0]   abs_y = {curr_tile_y, 1'b0}   + {{DIM_FIELD_WIDTH{1'b0}}, wb_py};
 
     wire [OUT_ADDR_WIDTH-1:0] wb_addr =
-        (abs_y * d_Wo + abs_x) * d_Co + kg_idx * NUM_ARRAYS + wb_arr;
+        (abs_y * d_comp_Wo+ abs_x) * d_comp_num_kernels + curr_kernel_group * NUM_ARRAYS + wb_arr;
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
@@ -340,6 +500,6 @@ module computation_overseer #(
     end
 
     assign o_busy = (state != IDLE);
-    assign o_done = (state == ST_NEXT) && (st_x == num_stx-1) && (st_y == num_sty-1);
+    assign o_done = (state == ST_NEXT) && (curr_tile_x == num_tiles_in_width-1) && (curr_tile_y == num_tiles_in_height-1);
 
 endmodule
