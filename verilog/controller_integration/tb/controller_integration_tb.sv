@@ -108,6 +108,12 @@ module controller_integration_tb;
     logic [3:0]            mem_wstrb;
     logic [DATA_WIDTH-1:0] mem_rdata;
 
+    `ifdef SYN
+        initial begin
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", proc);
+        end
+    `endif
+    
     //instantiations
     picorv32 proc (
         .clk(clk), .resetn(rst_n), .trap(trap),
@@ -130,6 +136,12 @@ module controller_integration_tb;
         .o_mmio_wstrb(mmio_wstrb), .i_mmio_ready(mmio_ready), .i_mmio_rdata(mmio_rdata)
     );
 
+    `ifdef SYN
+    initial begin
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/controller/controller.syn.sdf", controller_dut);
+    end
+    `endif
+    
     controller #(
         .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .DIM_WIDTH(DIM_WIDTH)
     ) controller_dut (

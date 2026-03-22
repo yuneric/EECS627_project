@@ -5,7 +5,7 @@ module computation_overseer #(
     parameter MEM_IF_ADDR_WIDTH  = 12,
     parameter WT_ADDR_WIDTH      = 11,
     parameter WORD_SIZE          = 64,
-    parameter SHIFT_WIDTH   = 5
+    parameter SHIFT_WIDTH        = 5
 )(
     input  wire                                  i_clk, 
     input  wire                                  i_rst_n,
@@ -65,7 +65,7 @@ module computation_overseer #(
     //TODO: discuss but i'm assuming there's going to be some sort of muxing logic that only sends one set of 64 bits.
     input logic [WORD_SIZE-1:0] i_pop_data,
     output logic [DIM-1:0] o_pop_en,
-    input logic  [DIM-1:0] i_pop_empty
+    input logic  [DIM-1:0] i_pop_empty, 
 
     // misc -we're gonna still use this for now
     output wire [NUM_ARRAYS-1:0] o_array_active,
@@ -74,7 +74,7 @@ module computation_overseer #(
     //from sa_slice - async fifos - need to edit in systolic array slice
     input logic [DIM-1:0] i_almost_empty, //2 (max_pool enabled)
     input logic [DIM-1:0] i_rd_full, //8 have all data.
-    input logic [DIM-1:0] i_rd_empty, //async 
+    input logic [DIM-1:0] i_rd_empty //async 
 
 );
 
@@ -88,11 +88,29 @@ module computation_overseer #(
     logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr;
     logic drain_wen; //write enable
     logic  [WORD_SIZE-1:0] drain_wdata; //the 64-bit data written from the drain
+    
+    //Add pipelining registers to handle 1-cycle FIFO read latency!
+    logic drain_wen_q;
+    logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr_q;
 
+    //account for 1 cycle of latency
+    always_ff @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            drain_wen_q <= '0;
+            curr_drain_waddr_q <= '0;
+            drain_wdata <= '0;
+        end else begin
+            drain_wen_q <= drain_wen;
+            curr_drain_waddr_q <= curr_drain_waddr;
+            if (drain_wen_q) begin
+                drain_wdata <= i_pop_data;
+            end
+        end
+    end
 
-    //assign the drain write info to the output port. 
-    assign o_comp_waddr = curr_drain_waddr;
-    assign o_comp_wen = drain_wen;
+    //assign the drain write info to the output port using the DELAYED signals. 
+    assign o_comp_waddr = curr_drain_waddr_q; 
+    assign o_comp_wen = drain_wen_q;         
     assign o_comp_wdata = drain_wdata;
 
     // Latched in i_start inputs
@@ -116,8 +134,9 @@ module computation_overseer #(
     // x_bound = min(Wo - top_left_output_pixel_x - 1, 3)
     // y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
     //2x4 so have to get the boundary indices
-    logic [1:0]                 x_bound, potential_x_bound; 
-    logic                       y_bound, potential_x_bound; 
+    logic [1:0]                 x_bound; 
+    logic                       y_bound;
+    logic [DIM_WIDTH-1:0]       potential_x_bound, potential_y_bound;
 
     //im2col - start that goes into im2colgen
     logic im2col_gen_inputs_valid;
@@ -130,9 +149,10 @@ module computation_overseer #(
     logic [NUM_ARRAYS-1:0] active;
     assign o_array_active = active;
 
-    //handshake signal to let you know the computation is done
-    //need to decide if just WAIT_FOR_DRAIN is enough
-    assign o_comp_done = (STATE == WAIT_FOR_DRAIN || STATE == DRAIN);
+    //handshake signal to let you know that you've gone through all the kernel groups
+    assign o_comp_done = ((curr_tile_x == num_tiles_in_width - 1) && 
+                    (curr_tile_y == num_tiles_in_height - 1) && 
+                    ((kernels_processed + num_kernels_per_group) >= d_comp_num_kernels)); 
 
     //next step is figuring out what setting logic does.
     // array_enable = [0] * num_arrays
@@ -148,15 +168,31 @@ module computation_overseer #(
 
 
     wire ic_start, ic_advance;
-    wire [ACT_ADDR_WIDTH-1:0] ic_act_addr;
+    wire [MEM_IF_ADDR_WIDTH-1:0] ic_act_addr;
     wire                      ic_act_valid;
     wire [WT_ADDR_WIDTH-1:0]  ic_wt_addr;
     wire                      ic_wt_valid;
     wire                      ic_data_last, ic_addr_valid, ic_busy, ic_done;
 
+
+
+   
+   
+    
+    input                          i_fifo_full,
+
+    output reg [MEM_IF_ADDR_WIDTH-1:0] o_act_addr,           // activation SRAM read address
+    output reg                         o_act_valid,          // address is in-bounds (else zero-pad)
+    output reg [WT_ADDR_WIDTH-1:0]     o_wt_addr,            // weight SRAM read address
+    output reg [NUM_ARRAYS-1:0]        o_wt_valid,           // kernel index valid (else zero-pad)
+    output reg                         o_push_en,            // push data into the fifo + read sram signal
+
+    output reg                        o_im2col_done         // goes high on the cycle after data_last asserts
+
+
     im2col_gen u_im2col(
         .i_clk(i_clk),
-        .i_rst_n(i_rst_n),i_cfg_padding
+        .i_rst_n(i_rst_n),
         .i_cfg_tile_H(i_comp_Hi), 
         .i_cfg_tile_W(i_comp_Wi),
         .i_cfg_Hf(i_comp_Hf),
@@ -164,20 +200,20 @@ module computation_overseer #(
         .i_cfg_stride(i_comp_stride),
         .i_cfg_padding(i_comp_padding),
         .i_cfg_words_ci(i_comp_words_per_channel),
-        .i_cfg_num_kernels_per_group(i_comp_num_kernels),
+        .i_cfg_curr_kernel_group(curr_kernel_group),
+        .i_cfg_num_kernels_per_group(num_kernels_per_group),
         .i_cfg_sub_tile_x(curr_tile_x),
         .i_cfg_sub_tile_y(curr_tile_y),
         .i_cfg_x_bound(x_bound),
         .i_cfg_y_bound(y_bound),
-        .i_start(im2col_gen_inputs_valid), //start.
-        // .i_advance(ic_advance),
-        .o_act_addr(ic_act_addr),
-        .o_act_valid(ic_act_valid),
-        .o_wt_addr(ic_wt_addr),
-        .o_wt_valid(ic_wt_valid),
-        .o_data_last(ic_data_last),
-        .o_addr_valid(ic_addr_valid),
-        // .o_busy(ic_busy), 
+        .i_im2col_start(im2col_gen_inputs_valid), //start.
+        .i_fifo_full(|i_push_fifo_full),
+        .o_act_addr(o_comp_raddr),
+        .o_act_valid(o_comp_ren),
+        .o_wt_addr(o_wt_sram_rd_addr),
+        .o_wt_valid(o_wt_sram_rd_en),
+        .o_data_last(io_push_data_last),
+        .o_addr_valid(o_push_en),
         .o_done(ic_done)
     );
 
@@ -208,7 +244,9 @@ module computation_overseer #(
                 end
             TILE_SETUP:
                 //if we're done go to IDLE, else go to COMPUTE
-                if(kernels_processed == d_comp_num_kernels) begin
+                if ((curr_tile_x == num_tiles_in_width - 1) && 
+                    (curr_tile_y == num_tiles_in_height - 1) && 
+                    ((kernels_processed + num_kernels_per_group) >= d_comp_num_kernels)) begin
                     next_state = IDLE;
                 end else begin
                     next_state = COMPUTE;
@@ -230,14 +268,12 @@ module computation_overseer #(
                     next_state = DRAIN;
                 end
             DRAIN:
-                //if we've emp
-                //if all the slice's asyncs are empty
-                // if(&i_pop_empty) begin
-                //     next_state = TILE_SETUP;
-                // end
-                if(&i_rd_empty) begin
+                //we could just do empty
+                //and all the signals so fully empty -> all systolic array output buffers are empty.
+                if (&i_rd_empty) begin
                     next_state = TILE_SETUP;
                 end
+            default: next_state = IDLE; // Good practice guardrail
         endcase
     end
 
@@ -254,12 +290,12 @@ module computation_overseer #(
     //x_bound = min(Wo - top_left_output_pixel_x - 1, 3)
     //y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
 
-    assign potential_x_bound = d_comp_Wo - (curr_tile_x << 2) - 1;
-    assign potential_y_bound = d_comp_Ho - (curr_tile_y << 1) - 1; 
+    assign potential_x_bound = d_comp_Wo - ({curr_tile_x, 2'b00}) - 1; 
+    assign potential_y_bound = d_comp_Ho - ({curr_tile_y, 1'b0}) - 1; 
 
-    
-    assign x_bound = potential_x_bound < 2'd3 : potential_x_bound : 2'd3;
-    assign y_bound = potential_y_bound < 2'd1 : potential_y_bound : 2'd1;
+   
+    assign x_bound = (potential_x_bound < 2'd3) ? potential_x_bound[1:0] : 2'd3;
+    assign y_bound = (potential_y_bound < 2'd1) ? potential_y_bound[0] : 1'b1;
 
 
     // Latch in inputs upon a i_start
@@ -270,7 +306,7 @@ module computation_overseer #(
             d_comp_num_kernels <= 0;
             num_tiles_in_width <= 0;
             num_tiles_in_height <= 0;
-            num_kg <= 0;
+            num_kernel_groups <= 0; 
             d_comp_relu_en <= 0;
             d_comp_maxpool_en <= 0;
 
@@ -278,7 +314,7 @@ module computation_overseer #(
             //reset these variables:
             curr_drain_waddr <= '0;
             drain_wen <= '0;
-            drain_wdata <= '0;
+            // drain_wdata <= '0; Removed, now handled in pipeline block above
 
             
         //latched in for setup
@@ -304,7 +340,7 @@ module computation_overseer #(
             //want to reset these signals as well:
             curr_tile_x <= '0;
             curr_tile_y <= '0;
-
+            curr_kernel_group <= '0;
            
             //kernels per group;
             //if there is 64 or less, then you just have 1 num_kernel_groups
@@ -347,7 +383,7 @@ module computation_overseer #(
                     curr_kernel_group <= curr_kernel_group + 1; 
 
                     //reset curr_drain_waddr to go back where it should be for the first pixel
-                    curr_drain_waddr <= kernels_processed;
+                    curr_drain_waddr <= (kernels_processed >> 3);
 
                     //need to reset curr_sa.
                     drain_curr_systolic_array <= '0;
@@ -373,8 +409,7 @@ module computation_overseer #(
             end   
         end else if (state == WAIT_FOR_DRAIN) begin 
             //reset these signals
-            // drain_curr_sa <= '0; //keeps track of the current sa we're keeping track of.
-            // kernels_drained <= '0;
+            drain_curr_systolic_array <= '0; //keeps track of the current sa we're keeping track of.
         end else if (state == DRAIN) begin
             //starting over plan: so basically we go to drain after we're done calculating a tile.
             //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
@@ -409,16 +444,15 @@ module computation_overseer #(
             //else you want to circle back to the front.
             end else begin
                 drain_curr_systolic_array <= '0;
+                
                 //when we circle back to the front we want to check the stride because we're moving to a new pixel.
                 
                 //at this point we're moving onto the next pixel, so have to calculate stride
                 //increment mem_if address by 1.
                 //we want to increment the addrss to be current address + the remaining kernels.
-                curr_drain_waddr <= curr_drain_waddr + (d_comp_num_kernels - num_kernels_per_group) + 1;
+                curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
             end
-
-            //we want to set i_pop_data equal to the data sent to mem_if
-            drain_wdata <= i_pop_data;        
+  
         end
     end
 

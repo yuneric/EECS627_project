@@ -1,9 +1,117 @@
 import numpy as np
 from scipy import signal
 
-'''
-NOTE: All this matmult stuff is in HWC format unless specified otherwise
-'''
+def int8_to_hex(val):
+    return f"{val.view(dtype=np.uint8):02X}"
+
+def calc_output_dim(Wi, Hi, Wf, Hf, stride, padding):
+    Wo = ((Wi + 2*padding - Wf) // stride) + 1
+    Ho = ((Hi + 2*padding - Hf) // stride) + 1
+    return Wo, Ho
+
+def convert_HWC_to_CHW(matrix):
+    return np.transpose(matrix, (2,0,1))
+
+def convert_CHW_to_HWC(matrix):
+    return np.transpose(matrix, (1,2,0))
+
+def convert_NCHW_to_NHWC(matrix):
+    return np.transpose(matrix, (0,2,3,1))
+
+def print_HWC(matrix):
+    dims = matrix.shape
+    rows = dims[0]
+    cols = dims[1]
+    depth = dims[2]
+    print(f'Matrix Dim: {dims}')
+    for mat_idx in range(depth):
+        print(f'channel = {mat_idx}')
+        for row in range(rows):
+            for col in range(cols):
+                print(f'{matrix[row][col][mat_idx]:>5}', end=' ' )
+            print('')
+    print('')
+
+def debug_mat_gen_HWC(rows, cols, depth):
+    matrix = np.empty((rows, cols, depth), dtype='<U10')
+    for mat_idx in range(depth):
+        for row in range(rows):
+            for col in range(cols):
+                matrix[row][col][mat_idx] = str(row*cols + col) + str(chr(ord('a') + mat_idx))
+    return matrix
+
+def debug_mat_gen_NHWC(rows, cols, depth, N):
+    matrix = np.empty((N, rows, cols, depth), dtype='<U10')
+    for filt in range(N):
+        for mat_idx in range(depth):
+            for row in range(rows):
+                for col in range(cols):
+                    matrix[filt][row][col][mat_idx] = str(filt) + '.' + str(row*cols + col) + str(chr(ord('a') + mat_idx))
+    return matrix
+
+
+# thanks gemini
+def pad_channels_to_word_size(arr, word_size, axis=-1):
+    """
+    Zero-pads the specified axis of the array to be a multiple of word_size.
+    
+    Args:
+        arr (np.ndarray): Input array (activations or weights).
+        word_size (int): The alignment size (e.g., 8).
+        axis (int): The dimension to pad. 
+                    Use -1 for HWC activations.
+                    Use 1 for NCHW weights (to pad Ci).
+                    Use 0 for NCHW weights (to pad Co/N).
+    
+    Returns:
+        np.ndarray: The zero-padded array.
+    """
+    channels = arr.shape[axis]
+    remainder = channels % word_size
+    
+    if remainder == 0:
+        return arr
+
+    padding_needed = word_size - remainder
+    
+    # Construct padding config: list of (before, after) tuples for each dim
+    pad_width = [(0, 0)] * arr.ndim
+    pad_width[axis] = (0, padding_needed)
+    
+    return np.pad(arr, pad_width, mode='constant', constant_values=0)
+
+# Takes a numpy matrix in HWC format, pads the channels and turns it into a memory matrix (depth x word_size)
+def make_memory_model(HWC_matrix, word_size):
+    mem_model = pad_channels_to_word_size(HWC_matrix, word_size)
+    mem_model = mem_model.reshape((-1, word_size))
+    return mem_model
+
+# Does a 3D convolution with all filters
+def do_cnn_layer(ifmap, kernels, stride=1, padding=0):
+    # Technically we want "correlation" because "convolution" actually flips the matrix 180
+    padded_ifmap = np.pad(ifmap, ((padding, padding), (padding, padding), (0, 0)))
+    #print_HWC(padded_ifmap)
+    Wo, Ho = calc_output_dim(ifmap.shape[1], ifmap.shape[0], kernels.shape[2], kernels.shape[1], stride, padding)
+    ofmap = np.empty((Ho, Wo, kernels.shape[0]), dtype=np.int32)
+    # print(Wo, Ho)
+    for kernel in range(kernels.shape[0]):
+        ofmap[:, :, kernel] = do_convolution(padded_ifmap, kernels[kernel], stride)
+    return ofmap
+
+# Does a 3D convolution
+def do_convolution(ifmap, kernel, stride=1):
+    # Technically we want "correlation" because "convolution" actually flips the matrix 180
+    result = signal.correlate(ifmap, kernel, mode='valid')
+    # 3D to 2D
+    result = result.squeeze()
+    # print(result)
+    result = result[::stride, ::stride]
+    # print(result)
+    return result
+
+###############################################################
+# Everything below this is pretty much only used in im2col.py #
+###############################################################
 
 def rand_mat_gen_2D(rows, cols, lower=-10, upper=10):
     return np.random.randint(lower, upper, (rows, cols), dtype=np.int8)
@@ -34,9 +142,6 @@ def mat_gen_4D(rows, cols, depth, N):
                 for col in range(cols):
                     matrix[filt][row][col][mat_idx] = str(row*cols + col) + str(chr(ord('a') + mat_idx))
     return matrix
-
-def int8_to_hex(val):
-    return f"{val.view(dtype=np.uint8):02X}"
 
 def print_2D_matrix(file, matrix):
     dims = matrix.shape
@@ -143,27 +248,9 @@ def print_mem(file, matrix):
     file.write(f"{matrix.ravel()}\n")
     file.write('\n')
 
-def calc_output_dim(Wi, Hi, Wf, Hf, stride):
-    Wo = ((Wi - Wf) // stride) + 1
-    Ho = ((Hi - Hf) // stride) + 1
-    return Wo, Ho
-
-def convert_HWC_to_CHW_3D(matrix):
-    return np.transpose(matrix, (2,0,1))
-
-def convolve_3D(ifmap, filtr, stride=1):
-    new_ifmap = convert_HWC_to_CHW_3D(ifmap)
-    new_filtr = convert_HWC_to_CHW_3D(filtr)
-    # Technically we want "correlation" because "convolution" actually flips the matrix 180
-    result = signal.correlate(new_ifmap, new_filtr, mode='valid')
-    # 3D to 2D
-    result = result.squeeze()
-    result = result[::stride, ::stride]
-    return result
-
 import numpy as np
 
-# Thanks Gemini (im tired)
+# Thanks Gemini (im tired) grok > gemini
 def write_hex_3D(matrix, file, word_width_bytes=4, little_endian=True):
     # Flatten matrix to a 1D stream of bytes
     # Ensure it's int8 and then cast to unsigned 8-bit to handle negative hex values correctly
@@ -190,4 +277,13 @@ def write_hex_3D(matrix, file, word_width_bytes=4, little_endian=True):
             
         file.write(word_hex + '\n')
 
-
+# Does a 3D convolution
+def convolve_3D(ifmap, filtr, stride=1):
+    new_ifmap = convert_HWC_to_CHW(ifmap)
+    new_filtr = convert_HWC_to_CHW(filtr)
+    # Technically we want "correlation" because "convolution" actually flips the matrix 180
+    result = signal.correlate(new_ifmap, new_filtr, mode='valid')
+    # 3D to 2D
+    result = result.squeeze()
+    result = result[::stride, ::stride]
+    return result

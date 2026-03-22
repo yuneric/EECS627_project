@@ -1,3 +1,4 @@
 Command Line: /usr/caen/verdi-2025.06-1/platform/LINUXAMD64/bin/Novas -ssf integrated_tb.fsdb
 uname(Linux dc3swp42.dc.umich.edu 5.14.0-611.5.1.el9_7.x86_64 #1 SMP PREEMPT_DYNAMIC Fri Oct 17 14:16:35 EDT 2025 x86_64)
 KdbImportParallelMixAllLib time 0.032422 0.008523 0.010771 delta 17973248 17973248 total 1087414272 1087414272
+au time 10020.551478 76.265200 38.618439 delta 411316224 411316224 total 1313751040 1313751040

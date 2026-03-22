@@ -257,7 +257,7 @@ module testbench;
     reg resetn = 0;
     wire trap;
 
-    always #5 clk = ~clk;
+    always #2.5 clk = ~clk;
 
     initial begin
         repeat (100) @(posedge clk);
@@ -340,6 +340,28 @@ module testbench;
         mem_access_fd = $fopen(memory_access_file, "w");
         npu_log_fd = $fopen("npu_access.out", "w"); 
     end
+
+    `ifdef SYN
+    initial begin
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", testbench.arbiter_inst);
+        $display("[%0t] SDF annotation call finished", $time);
+    end
+    `else
+    initial begin
+        $display("[%0t] SYN not defined, no SDF annotation", $time);
+    end
+    `endif
+
+    `ifdef SYN
+    initial begin
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", testbench.proc);
+        $display("[%0t] SDF annotation call finished", $time);
+    end
+    `else
+    initial begin
+        $display("[%0t] SYN not defined, no SDF annotation", $time);
+    end
+    `endif
 
     // --- 1. THE CPU ---
     picorv32 proc (

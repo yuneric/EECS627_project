@@ -334,10 +334,7 @@ class MMU:
                     current_mem_ptr += (burst_len * 4)
                 
             #update jump
-            jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * words_per_channel * 8)
-            #harshit added below
-            #jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * self._i_words_per_channel * 8)
-            #jump_mem_ptr = jump_mem_ptr + self._i_tile_stride
+            jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * self._i_words_per_channel * 8)
 
 
     def _execute_store_tile(self, bus):
@@ -443,9 +440,7 @@ class MMU:
                     current_mem_ptr += (burst_len * 4)
                 
             #update jump
-            jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * words_per_channel * 8)
-            #jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * self._i_words_per_channel * 8)
-            #jump_mem_ptr = jump_mem_ptr + self._i_tile_stride
+            jump_mem_ptr = jump_mem_ptr + (self._i_tile_stride * self._i_words_per_channel * 8)
 
 # =====================================================================
 # UPDATED MOCK SYSTEM
@@ -495,7 +490,8 @@ class MockSystem:
         self.current_write_addr = addr
         self.write_beats_remaining = length + 1
         return 1
-        
+    
+    #We just write data this doesn't work for store tiles because there are bursts
     def send_write_data(self, data, last):
         """Receives a 32-bit beat from the MMU and stores it in physical memory."""
         self.off_chip_mem[self.current_write_addr] = data
@@ -649,8 +645,8 @@ if __name__ == "__main__":
     #The W is the Width of the kernels, how many words in 64 bits that get the 
     #8 is the number of bytes.
     feature_map_stride = W
-    tile_W = 3
-    tile_H = 3
+    tile_W = 2
+    tile_H = 2
 
     mmu_act_load = MMU(
         i_load_weights=0, i_load_tile=1, i_store_tile=0, 
@@ -680,12 +676,46 @@ if __name__ == "__main__":
     print(f"  Expected Hex: {hex(expected_w0)}")
     print(f"  Actual Hex:   {hex(w0)}")
     
-    # 2. Check Load Sub-Tile (SRAM contains correct sub-tile)
-    print("\n--- Load Sub-Tile Verification ---")
+    print("\n--- Load Sub-Tile Verification: 2x2 Tile ---")
+
+    # SRAM 0: Row 0, Col 0 (Line 0 in text file)
+    #first pixel
+    #two words per pixel
     expected_sram0 = activation_mem[0].astype(np.int8).view(np.uint64)[0]
     actual_sram0 = bus.read_act_sram(0)
     print(f"Tile Row 0, Col 0 (SRAM Addr 0):")
-    print(f"  Expected: {hex(expected_sram0)} | Actual: {hex(actual_sram0)}")
+    print(f"  Expected: {hex(expected_sram0):>18} | Actual: {hex(actual_sram0):>18}")
+
+    expected_sram1 = activation_mem[1].astype(np.int8).view(np.uint64)[0]
+    actual_sram1 = bus.read_act_sram(1)
+    print(f"Tile Row 0, Col 0 (cont):")
+    print(f"  Expected: {hex(expected_sram1):>18} | Actual: {hex(actual_sram1):>18}")
+
+    ##second pixel is going to be third entry in expected sram
+    expected_sram2 = activation_mem[2].astype(np.int8).view(np.uint64)[0]
+    actual_sram2 = bus.read_act_sram(2)
+    print(f"Tile Row 1, Col 0 (SRAM Addr 2):")
+    print(f"  Expected: {hex(expected_sram2):>18} | Actual: {hex(actual_sram2):>18}")
+
+    #seconf pixel cont.
+    expected_sram3 = activation_mem[3].astype(np.int8).view(np.uint64)[0]
+    actual_sram3 = bus.read_act_sram(3)
+    print(f"Tile Row 1, Col 0 (cont):")
+    print(f"  Expected: {hex(expected_sram3):>18} | Actual: {hex(actual_sram3):>18}")
+
+    #third pixel -> here is the jump
+    expected_sram4 = activation_mem[6].astype(np.int8).view(np.uint64)[0]
+    actual_sram4 = bus.read_act_sram(4)
+    print(f"Tile Row 1, Col 1:")
+    print(f"  Expected: {hex(expected_sram4):>18} | Actual: {hex(actual_sram4):>18}")
+
+
+    #third pixel -> here is the jump
+    expected_sram5 = activation_mem[7].astype(np.int8).view(np.uint64)[0]
+    actual_sram5 = bus.read_act_sram(5)
+    print(f"Tile Row 1, Col 1: Cont.")
+    print(f"  Expected: {hex(expected_sram5):>18} | Actual: {hex(actual_sram5):>18}")
+    
 
     # 3. Check Store Tile (Off-Chip Memory was successfully written to)
     print("\n--- Store Tile Verification ---")
@@ -700,6 +730,66 @@ if __name__ == "__main__":
     print(f"Data Written to Off-Chip Memory (STORE_BASE 0x2000):")
     print(f"  What we expect (Data from SRAM Addr 0): {hex(actual_sram0)}")
     print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+
+      # Read the two 32-bit beats we wrote back to off-chip memory at STORE_BASE
+    stored_low_beat = bus.off_chip_mem.get(STORE_BASE + 8, 0)
+    stored_high_beat = bus.off_chip_mem.get(STORE_BASE + 12, 0)
+    
+    # Recombine them to check against our SRAM data
+    stored_recombined = (int(stored_high_beat) << 32) | int(stored_low_beat)
+    
+    print(f"Data Written to Off-Chip Memory (next store):")
+    print(f"  What we expect (Data from SRAM Addr 1): {hex(actual_sram1)}")
+    print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+      # Read the two 32-bit beats we wrote back to off-chip memory at STORE_BASE
+    stored_low_beat = bus.off_chip_mem.get(STORE_BASE + 16, 0)
+    stored_high_beat = bus.off_chip_mem.get(STORE_BASE + 20, 0)
+    
+    # Recombine them to check against our SRAM data
+    stored_recombined = (int(stored_high_beat) << 32) | int(stored_low_beat)
+    
+    print(f"Data Written to Off-Chip Memory (next store):")
+    print(f"  What we expect (Data from SRAM Addr 2): {hex(actual_sram2)}")
+    print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+
+      # Read the two 32-bit beats we wrote back to off-chip memory at STORE_BASE
+    stored_low_beat = bus.off_chip_mem.get(STORE_BASE + 24, 0)
+    stored_high_beat = bus.off_chip_mem.get(STORE_BASE + 28, 0)
+    
+    # Recombine them to check against our SRAM data
+    stored_recombined = (int(stored_high_beat) << 32) | int(stored_low_beat)
+    
+    print(f"Data Written to Off-Chip Memory (next store):")
+    print(f"  What we expect (Data from SRAM Addr 3): {hex(actual_sram3)}")
+    print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+    # Read the two 32-bit beats we wrote back to off-chip memory at STORE_BASE
+    stored_low_beat = bus.off_chip_mem.get(STORE_BASE + 32, 0)
+    stored_high_beat = bus.off_chip_mem.get(STORE_BASE + 36, 0)
+    
+    # Recombine them to check against our SRAM data
+    stored_recombined = (int(stored_high_beat) << 32) | int(stored_low_beat)
+    
+    print(f"Data Written to Off-Chip Memory (next store):")
+    print(f"  What we expect (Data from SRAM Addr 4): {hex(actual_sram4)}")
+    print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+
+    # Read the two 32-bit beats we wrote back to off-chip memory at STORE_BASE
+    stored_low_beat = bus.off_chip_mem.get(STORE_BASE + 40, 0)
+    stored_high_beat = bus.off_chip_mem.get(STORE_BASE + 44, 0)
+    
+    # Recombine them to check against our SRAM data
+    stored_recombined = (int(stored_high_beat) << 32) | int(stored_low_beat)
+    
+    print(f"Data Written to Off-Chip Memory (next store):")
+    print(f"  What we expect (Data from SRAM Addr 5): {hex(actual_sram5)}")
+    print(f"  What was actually written to Off-Chip:  {hex(stored_recombined)}")
+
+
 
     if mmu_wgt.is_done and mmu_act_load.is_done and mmu_act_store.is_done:
         print("\nSimulation Status: DONE")
@@ -844,11 +934,14 @@ if __name__ == "__main__":
     total_store_beats = total_store_words * 2
 
     with open(os.path.join(vec_dir, "golden_store_axi32.hex"), "w") as f:
-        for beat in range(total_store_beats):
+        #for beat in range(total_store_beats):
+        #print the entirety of memory from the base address
+        for beat in range(260096):
             addr = STORE_BASE + (beat * 4)
             val = int(bus.off_chip_mem.get(addr, 0))
             f.write(f"{val:08x}\n")
 
+    #print the entirety of off-chip memory actually to check:
     with open(os.path.join(vec_dir, "golden_weight_sram_dump.txt"), "w") as f:
         for bank in range(8):
             for addr in range(2048):

@@ -23,7 +23,7 @@ module mmu_tb;
 
     logic clk   = 0;
     logic rst_n = 0;
-    always #5 clk = ~clk;
+    always #2.5 clk = ~clk;
     logic wmem_clk;// why do these timing violations exists
     assign #1 wmem_clk = clk;
     integer act_write_count;
@@ -115,6 +115,21 @@ module mmu_tb;
     integer write_count; //the number of writes done - used for debugging purposes
     integer timeout_count; //timed_out - used for debugging to check if deadlock
     logic   done_seen; //checks if done is set.
+
+
+    // $sdf_annotate(sdf_file, scope, config_file, log_file);
+    `ifdef SYN
+    initial begin
+        $display("[%0t] Applying SDF", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmu/mmu.syn.sdf", mmu_tb.mmu_dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", mmu_tb.arbiter_inst);
+        $display("[%0t] SDF annotation call finished", $time);
+    end
+    `else
+    initial begin
+        $display("[%0t] SYN not defined, no SDF annotation", $time);
+    end
+    `endif
 
     mmu #(
         .ADDR_WIDTH(ADDR_WIDTH),
@@ -521,7 +536,16 @@ module mmu_tb;
     //         end
     //     end
     // endtask
-    
+    // always @(posedge clk) begin
+    //     $display("[%0t edge]  rvalid=%0b rlast=%0b data=%08h row_counter=%0d kcnt=%0d done=%0b",
+    //             $time, i_npu_rvalid, i_npu_rlast, i_npu_rdata,
+    //             mmu_dut.row_counter, mmu_dut.kernel_word_count, o_done);
+    //     #1;
+    //     $display("[%0t +1ns] rvalid=%0b rlast=%0b data=%08h row_counter=%0d kcnt=%0d done=%0b",
+    //             $time, i_npu_rvalid, i_npu_rlast, i_npu_rdata,
+    //             mmu_dut.row_counter, mmu_dut.kernel_word_count, o_done);
+    // end
+
     //new dump_weight_srams_task that doesn't limit print of more than 8 kernels in a bank
     task automatic dump_weight_srams_python_format(
         input integer fd,
@@ -923,7 +947,7 @@ module mmu_tb;
             $display("PASS store_tile test%0d", test_idx);
             dump_store_mem(out_fd, expected_words);
         end
-
+        $display("------------PASS ALL TESTS -------------");
         $fclose(out_fd);
         $finish;
     end

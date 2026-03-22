@@ -1,0 +1,35 @@
+#######################################################################################
+# fsdb.xxxxx.log : log primitive debug message of FSDB Reader
+# This is for R&D to analyze when there are issues happening when FSDB reading
+# The corresponding FSDB file is /afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller_integration/tb/integrated_tb.fsdb
+#######################################################################################
+[BASIC]Reader version : Chronologic Simulation VCS Release X-2025.06-1_Full64
+[BASIC]simulator version : Chronologic Simulation VCS Release X-2025.06-1_Full64
+[BASIC]dumper version : FSDB Dumper for VCS, Release Verdi_X-2025.06-1, Linux x86_64/64bit, 07/19/2025
+Async open disabled.
+[THREAD]The MTR thread count is 9
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[PERF]VC decompress count : 0
+[PERF]VCChain decompress count : 0
+[READSCOPE]ReadScopeTree calling time is 1
+[READSCOPE]ReadScope_PartialLoad calling time is 0
+[READSCOPE]Scope read by partial load count is 0
+[READSCOPE]Scope read count is 3
+[READSCOPE]Decompressed blk is 2
+[MAXCHAIN]Decompressed cnt 1
+[PERF]VC decompress count : 26
+[PERF]VCChain decompress count : 5
+[FSDBGate Info] start
+[FSDBGate Info] Total fhdb_compute_count = 156927
+[FSDBGate Info] end

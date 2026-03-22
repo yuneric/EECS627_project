@@ -34,7 +34,7 @@ module systolic_array_system #(
     
     `ifdef SYN
     initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", sa_slice_tb.dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf", sa_slice_tb.dut);
     end
     `else
     initial begin

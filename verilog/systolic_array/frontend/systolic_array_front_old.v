@@ -1,17 +1,20 @@
 module systolic_array_front #(
-    parameter ARRAY_SIZE  = 4,
+    parameter ARRAY_SIZE  = 8,
     parameter DATA_WIDTH  = 8,
     parameter PSUM_WIDTH  = 32,
-    parameter FIFO_DEPTH  = 4
+    parameter FIFO_DEPTH  = 8
 )(
-    input  wire                                 clk,
+    // Write-side clock (from controller/MMU side)
+    input  wire                                 clk_wr,
+    // Compute-side clock 
+    input  wire                                 clk_sa,
     input  wire                                 rst_n,
 
     input  wire [DATA_WIDTH*ARRAY_SIZE-1:0]     act_wr_data,
     input  wire [DATA_WIDTH*ARRAY_SIZE-1:0]     weight_wr_data,
-    input  wire                                 data_last,   // 1 = last row of final tile
+    input  wire                                 data_last,   // last row of a tile
     input  wire                                 wr_en,
-    output wire                                 fifo_full,
+    output wire                                 fifo_full, // stop that loading
 
     output wire [DATA_WIDTH*ARRAY_SIZE-1:0]     act_to_array,
     output wire [DATA_WIDTH*ARRAY_SIZE-1:0]     weight_to_array,
@@ -20,12 +23,13 @@ module systolic_array_front #(
     output reg                                  sa_compute_en,
     output reg                                  sa_drain,
 
-    input  wire [PSUM_WIDTH*ARRAY_SIZE-1:0]     psum_from_array,
+    input  wire [PSUM_WIDTH*ARRAY_SIZE-1:0]     psum_from_array, // result from the array
     output wire [PSUM_WIDTH*ARRAY_SIZE-1:0]     result_out,
     output reg                                  result_valid
 );
 
     localparam PROPAGATE_CYCLES = 2 * ARRAY_SIZE - 1;
+    localparam DRAIN_VALID_DELAY = 0;
 
     localparam SEL_W = $clog2(ARRAY_SIZE);
 
@@ -35,7 +39,7 @@ module systolic_array_front #(
     localparam [2:0] S_PROPAGATE = 3'd3;  // Waiting for computation to finish
     localparam [2:0] S_DRAIN     = 3'd4;  // Shifting results out of array
 
-    reg [2:0] state, state_next;
+    reg [2:0] state;
     reg [SEL_W:0]             stage_cnt;       // Counts rows staged (0 to DIM-1)
     reg [SEL_W:0]             serial_cnt;      // Counts serialization cycles
     reg [$clog2(3*ARRAY_SIZE):0] prop_cnt;     // Counts propagation wait
@@ -49,28 +53,59 @@ module systolic_array_front #(
     wire                              info_fifo_rd;
 
     wire act_fifo_empty, weight_fifo_empty, info_fifo_empty;
-    wire act_fifo_full,  weight_fifo_full;
+    wire act_fifo_full,  weight_fifo_full, info_fifo_full;
+    wire act_fifo_af,  weight_fifo_af, info_fifo_af;
     reg  fifo_rd_en;
+    // reg  fifo_rd_en_d;   // one-cycle delayed
 
-    sync_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_act_fifo (
-        .clk(clk), .rst_n(rst_n),
-        .wr_data(act_wr_data), .wr_en(wr_en), .full(act_fifo_full),
-        .rd_data(act_fifo_rd), .rd_en(fifo_rd_en), .empty(act_fifo_empty)
+    //wire capture_en = fifo_rd_en_d;
+    
+    async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_act_fifo (
+        .wr_clk  (clk_wr),
+        .wr_rst_n(rst_n),
+        .wr_data (act_wr_data),
+        .wr_en   (wr_en),
+        .full    (act_fifo_full),
+        .almost_full(act_fifo_af),
+        .rd_clk  (clk_sa),
+        .rd_rst_n(rst_n),
+        .rd_data (act_fifo_rd),
+        .rd_en   (fifo_rd_en),
+        .empty   (act_fifo_empty)
     );
 
-    sync_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_weight_fifo (
-        .clk(clk), .rst_n(rst_n),
-        .wr_data(weight_wr_data), .wr_en(wr_en), .full(weight_fifo_full),
-        .rd_data(weight_fifo_rd), .rd_en(fifo_rd_en), .empty(weight_fifo_empty)
+    async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_weight_fifo (
+        .wr_clk  (clk_wr),
+        .wr_rst_n(rst_n),
+        .wr_data (weight_wr_data),
+        .wr_en   (wr_en),
+        .full    (weight_fifo_full),
+        .almost_full(weight_fifo_af),
+        .rd_clk  (clk_sa),
+        .rd_rst_n(rst_n),
+        .rd_data (weight_fifo_rd),
+        .rd_en   (fifo_rd_en),
+        .empty   (weight_fifo_empty)
     );
 
-    sync_fifo #(.WIDTH(1), .DEPTH(FIFO_DEPTH)) u_info_fifo (
-        .clk(clk), .rst_n(rst_n),
-        .wr_data(data_last), .wr_en(wr_en), .full(),
-        .rd_data(info_fifo_rd), .rd_en(fifo_rd_en), .empty(info_fifo_empty)
+    async_fifo #(.WIDTH(1), .DEPTH(FIFO_DEPTH)) u_info_fifo (
+        .wr_clk  (clk_wr),
+        .wr_rst_n(rst_n),
+        .wr_data (data_last),
+        .wr_en   (wr_en),
+        .full(info_fifo_full),
+        .almost_full(info_fifo_af),
+        .rd_clk  (clk_sa),
+        .rd_rst_n(rst_n),
+        .rd_data (info_fifo_rd),
+        .rd_en   (fifo_rd_en),
+        .empty   (info_fifo_empty)
     );
 
-    assign fifo_full = act_fifo_full | weight_fifo_full;
+    reg pop_pending;
+    //assign fifo_full = act_fifo_full | weight_fifo_full | info_fifo_full;
+    // if we wait til full appears, we still write on the cycle that full goes high and we get an error
+    assign fifo_full = act_fifo_af | weight_fifo_af | info_fifo_af;
 
     wire fifos_have_data = !act_fifo_empty & !weight_fifo_empty & !info_fifo_empty;
 
@@ -79,18 +114,19 @@ module systolic_array_front #(
     reg [DATA_WIDTH*ARRAY_SIZE-1:0] weight_staged [0:ARRAY_SIZE-1];
 
     integer s;
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk_sa or negedge rst_n) begin
         if (!rst_n) begin
+            // reset the staging registers clear them
             for (s = 0; s < ARRAY_SIZE; s = s + 1) begin
                 act_staged[s]    <= 0;
                 weight_staged[s] <= 0;
             end
-        end else if (state == S_STAGE && fifo_rd_en) begin
-            act_staged[stage_cnt[SEL_W-1:0]]    <= act_fifo_rd;
-            weight_staged[stage_cnt[SEL_W-1:0]] <= weight_fifo_rd;
         end
+        // end else if (state == S_STAGE && fifo_rd_en) begin
+        //     act_staged[stage_cnt[SEL_W-1:0]]    <= act_fifo_rd;
+        //     weight_staged[stage_cnt[SEL_W-1:0]] <= weight_fifo_rd;
+        // end
     end
-
     wire                         ser_load;
     wire                         ser_shift;
     wire [DATA_WIDTH-1:0]        act_serial_out  [0:ARRAY_SIZE-1];
@@ -104,13 +140,13 @@ module systolic_array_front #(
     generate
         for (g = 0; g < ARRAY_SIZE; g = g + 1) begin : SERIALIZERS
             serializer #(.DIM(ARRAY_SIZE), .DATA_WIDTH(DATA_WIDTH)) u_act_ser (
-                .clk(clk), .rst_n(rst_n),
+                .clk(clk_sa), .rst_n(rst_n),
                 .load(ser_load), .shift(ser_shift),
                 .par_in(act_staged[g]),
                 .ser_out(act_serial_out[g])
             );
             serializer #(.DIM(ARRAY_SIZE), .DATA_WIDTH(DATA_WIDTH)) u_weight_ser (
-                .clk(clk), .rst_n(rst_n),
+                .clk(clk_sa), .rst_n(rst_n),
                 .load(ser_load), .shift(ser_shift),
                 .par_in(weight_staged[g]),
                 .ser_out(weight_serial_out[g])
@@ -129,25 +165,26 @@ module systolic_array_front #(
         end
     endgenerate
 
-    wire clear_skew = (state == S_SERIALIZE && serial_cnt == 0); // Clear at start of each tile
+    wire clear_skew = (state == S_SERIALIZE && serial_cnt == 0);
 
     skew_buffer #(.ARRAY_SIZE(ARRAY_SIZE), .DATA_WIDTH(DATA_WIDTH)) u_act_skew (
-        .clk(clk), .rst_n(rst_n),
+        .clk(clk_sa), .rst_n(rst_n),
         .clear(clear_skew),
         .data_in(act_serial_vec),
         .data_out(act_to_array)
     );
 
     skew_buffer #(.ARRAY_SIZE(ARRAY_SIZE), .DATA_WIDTH(DATA_WIDTH)) u_weight_skew (
-        .clk(clk), .rst_n(rst_n),
+        .clk(clk_sa), .rst_n(rst_n),
         .clear(clear_skew),
         .data_in(weight_serial_vec),
         .data_out(weight_to_array)
     );
-
+    // psum from the systolic array (one psum per column)
+    // the result goes to the relu module
     assign result_out = psum_from_array;
-
-    always @(posedge clk or negedge rst_n) begin
+    
+    always @(posedge clk_sa or negedge rst_n) begin
         if (!rst_n) begin
             state         <= S_IDLE;
             stage_cnt     <= 0;
@@ -156,11 +193,12 @@ module systolic_array_front #(
             drain_cnt     <= 0;
             flush_pending <= 0;
             first_tile    <= 1;
-            fifo_rd_en    <= 0;
-            sa_clear      <= 0;
-            sa_compute_en <= 0;
-            sa_drain      <= 0;
+            fifo_rd_en    <= 0; // when data is needed, assert this
+            sa_clear      <= 0; // clear the accumulators
+            sa_compute_en <= 0; // compute the result
+            sa_drain      <= 0; // drain the result
             result_valid  <= 0;
+            pop_pending <= 1'b0; 
         end else begin
             // Defaults
             sa_clear     <= 0;
@@ -168,35 +206,47 @@ module systolic_array_front #(
             result_valid <= 0;
 
             case (state)
+                // S_IDLE: begin
+                //     sa_drain      <= 0;
+                //     sa_compute_en <= 0;
+                //     if (fifos_have_data && !flush_pending) begin
+                //         state      <= S_STAGE;
+                //         stage_cnt  <= 0;
+                //         fifo_rd_en <= 1;  // Start reading first entry
+                //     end
+                // end
                 S_IDLE: begin
                     sa_drain      <= 0;
                     sa_compute_en <= 0;
+                    pop_pending   <= 1'b0;
                     if (fifos_have_data && !flush_pending) begin
-                        state      <= S_STAGE;
-                        stage_cnt  <= 0;
-                        fifo_rd_en <= 1;  // Start reading first entry
+                        state     <= S_STAGE;
+                        stage_cnt <= 0;
                     end
                 end
 
                 S_STAGE: begin
-                    // Read one FIFO entry per cycle into staging register
-                    if (stage_cnt == ARRAY_SIZE - 1) begin
-                        // Last row staged
+                    if (pop_pending) begin
+                        act_staged[stage_cnt[SEL_W-1:0]]    <= act_fifo_rd;
+                        weight_staged[stage_cnt[SEL_W-1:0]] <= weight_fifo_rd;
+                        // flush pending is set when data_last is seen in the info fifo and so after propagation we should 
+                        // go to the drain state and drain the outputs
                         if (info_fifo_rd)
-                            flush_pending <= 1;
-                        state      <= S_SERIALIZE;
-                        serial_cnt <= 0;
-                        fifo_rd_en <= 0;
-                    end else begin
-                        stage_cnt  <= stage_cnt + 1;
-                        // Check if next read will see data_last
-                        if (info_fifo_rd)
-                            flush_pending <= 1;
-                        // Keep reading if more rows needed
-                        if (fifos_have_data)
-                            fifo_rd_en <= 1;
-                        else
-                            fifo_rd_en <= 0;
+                            flush_pending <= 1'b1;
+
+                        pop_pending <= 1'b0;
+
+                        if (stage_cnt == ARRAY_SIZE-1) begin
+                            state      <= S_SERIALIZE;
+                            serial_cnt <= 0;
+                        end else begin
+                            stage_cnt <= stage_cnt + 1'b1;
+                        end
+                    end
+
+                    if (!pop_pending && (stage_cnt < ARRAY_SIZE) && fifos_have_data) begin
+                        fifo_rd_en  <= 1'b1;
+                        pop_pending <= 1'b1;
                     end
                 end
 
@@ -204,6 +254,7 @@ module systolic_array_front #(
                     sa_compute_en <= 1;
 
                     // Pulse clear on the first cycle of the first tile
+                    // on the first serialize so clear the sa's accs
                     if (serial_cnt == 0 && first_tile) begin
                         sa_clear   <= 1;
                         first_tile <= 0;
@@ -217,6 +268,7 @@ module systolic_array_front #(
                         serial_cnt <= serial_cnt + 1;
                     end
                 end
+
 
                 S_PROPAGATE: begin
                     sa_compute_en <= 1;

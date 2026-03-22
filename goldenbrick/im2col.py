@@ -11,8 +11,8 @@ scripts_path = os.path.join(script_dir, '../common')
 sys.path.append(scripts_path) 
 
 from matgen import *
-from systolic_array import SystolicArrayGolden
-from accum_buf import accum_buf
+# from systolic_array import SystolicArrayGolden
+# from accum_buf import accum_buf
 
 def im2col(ifmap, filters, options):
     txt_file = open(options.txt_filename, 'w')
@@ -53,7 +53,7 @@ def im2col(ifmap, filters, options):
     Ci = ifmap.shape[2]
     stride = options.stride
     # Outputs dims
-    Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride)
+    Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride, 0)
     Co = options.filters
 
     # Get a 1D view like we would in hardware mem
@@ -212,75 +212,75 @@ def im2col(ifmap, filters, options):
 
     return lowered_ifmap, lowered_filters
 
-class im2col_engin:
-    def __init__(self, ifmap, filters, stride, SA_dim, buf_dim):
-        self.SA_dim = SA_dim
-        self.word_size = SA_dim
-        self.stride = stride
+# class im2col_engin:
+#     def __init__(self, ifmap, filters, stride, SA_dim, buf_dim):
+#         self.SA_dim = SA_dim
+#         self.word_size = SA_dim
+#         self.stride = stride
 
-        # Systolic array
-        self.systolic_array_shape = (SA_dim, SA_dim)
-        self.systolic_array = SystolicArrayGolden(SA_dim, SA_dim)
+#         # Systolic array
+#         self.systolic_array_shape = (SA_dim, SA_dim)
+#         self.systolic_array = SystolicArrayGolden(SA_dim, SA_dim)
 
-        # Accumulation buffer
-        if(buf_entries < SA_dim):
-            print(f"ERROR: Buf entries < SA_dim")
-            exit(0)
-        self.buf_dim = buf_dim
-        self.accum_buf = accum_buf(buf_dim**2, self.word_size)
-        self.accum_buf.reset(buf_dim**2)
+#         # Accumulation buffer
+#         if(buf_entries < SA_dim):
+#             print(f"ERROR: Buf entries < SA_dim")
+#             exit(0)
+#         self.buf_dim = buf_dim
+#         self.accum_buf = accum_buf(buf_dim**2, self.word_size)
+#         self.accum_buf.reset(buf_dim**2)
 
-        self.init_mem(ifmap, filters)
+#         self.init_mem(ifmap, filters)
 
-    def init_mem(self, ifmap, filters):
-        self.Hi = ifmap.shape[0] # height ifmap
-        self.Wi = ifmap.shape[1] # width ifmap
-        self.Ci = ifmap.shape[2] # input channels
+#     def init_mem(self, ifmap, filters):
+#         self.Hi = ifmap.shape[0] # height ifmap
+#         self.Wi = ifmap.shape[1] # width ifmap
+#         self.Ci = ifmap.shape[2] # input channels
 
-        self.Nf = filters.shape[0]  # num filters
-        self.Hf = filters.shape[1]  # height filters
-        self.Wf = filters.shape[2]  # width filters
+#         self.Nf = filters.shape[0]  # num filters
+#         self.Hf = filters.shape[1]  # height filters
+#         self.Wf = filters.shape[2]  # width filters
 
-        self.Wo, self.Ho = calc_output_dim(self.Wi, self.Hi, self.Wf, self.Hf, self.stride)
+#         self.Wo, self.Ho = calc_output_dim(self.Wi, self.Hi, self.Wf, self.Hf, self.stride, 0)
 
-        ifmap_1D = ifmap.ravel()
-        filters_1D = filters.ravel()
-        main_mem = np.concatenate((ifmap_1D, filters_1D))
+#         ifmap_1D = ifmap.ravel()
+#         filters_1D = filters.ravel()
+#         main_mem = np.concatenate((ifmap_1D, filters_1D))
 
-        # Generate a memory layout of words of word_size (where word_size is the number of data elements)
-        # Channels are padded with 0's if they dont fill the whole word
-        word = [[] for _ in range(self.word_size)]
-        self.mem = []
-        word_idx = 0
-        print(main_mem)
-        for idx in range(main_mem.shape[0]):
-            word[word_idx] = main_mem[idx]
-            if(((idx + 1) % self.Ci) == 0):
-                # Do zero padding
-                zero_pad = self.word_size - word_idx - 1
-                for zero_idx in range(zero_pad):
-                    word[self.word_size - zero_idx - 1] = 0
-                self.mem.append(copy.deepcopy(word))
-                word_idx = 0
-            elif(word_idx == self.word_size - 1):
-                # Finished a word
-                self.mem.append(copy.deepcopy(word))
-                word_idx = 0
-            else:
-                word_idx += 1
-        print(self.mem)
+#         # Generate a memory layout of words of word_size (where word_size is the number of data elements)
+#         # Channels are padded with 0's if they dont fill the whole word
+#         word = [[] for _ in range(self.word_size)]
+#         self.mem = []
+#         word_idx = 0
+#         print(main_mem)
+#         for idx in range(main_mem.shape[0]):
+#             word[word_idx] = main_mem[idx]
+#             if(((idx + 1) % self.Ci) == 0):
+#                 # Do zero padding
+#                 zero_pad = self.word_size - word_idx - 1
+#                 for zero_idx in range(zero_pad):
+#                     word[self.word_size - zero_idx - 1] = 0
+#                 self.mem.append(copy.deepcopy(word))
+#                 word_idx = 0
+#             elif(word_idx == self.word_size - 1):
+#                 # Finished a word
+#                 self.mem.append(copy.deepcopy(word))
+#                 word_idx = 0
+#             else:
+#                 word_idx += 1
+#         print(self.mem)
         
-        self.channel_words = int(math.ceil(self.Ci / self.word_size))
-        self.ifmap_base_address = 0
-        self.filters_base_address = self.Hi * self.Wi * self.channel_words
+#         self.channel_words = int(math.ceil(self.Ci / self.word_size))
+#         self.ifmap_base_address = 0
+#         self.filters_base_address = self.Hi * self.Wi * self.channel_words
 
-    def run_im2col(self):
-        weights = np.zeros(self.systolic_array_shape)
-        # Outermost loop is the tiling of the output matrix
-        for output_row in range(0, self.Ho, self.buf_dim):
-            for output_col in range(0, self.Wo, self.buf_dim):
+#     # def run_im2col(self):
+#     #     weights = np.zeros(self.systolic_array_shape)
+#     #     # Outermost loop is the tiling of the output matrix
+#     #     for output_row in range(0, self.Ho, self.buf_dim):
+#     #         for output_col in range(0, self.Wo, self.buf_dim):
                 
-        # Load a channel of pixels for (SA_dim) filters
+    #     # Load a channel of pixels for (SA_dim) filters
         
         
 
@@ -298,7 +298,7 @@ def main(options):
         mat_filters = rand_mat_gen_4D(options.filters_rows, options.filters_cols, options.channels, options.filters, options.lower_bound, options.upper_bound)
 
     im2col(mat_ifmap, mat_filters, options)
-    im2col_obj = im2col_engin(mat_ifmap, mat_filters, options.stride, 4, 4*4)
+    #im2col_obj = im2col_engin(mat_ifmap, mat_filters, options.stride, 4, 4*4)
 
 if __name__ == "__main__":
 

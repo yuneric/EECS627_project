@@ -206,6 +206,9 @@ class systolic_array_backend:
     # Method for getting data out of the output buffer
     def read_output_fifo(self):
         return self.output_fifo.read()
+
+    def output_fifo_empty(self):
+        return self.output_fifo.empty()
     
     # SIMULATES A SINGLE CYCLE
     def step(self, input_data, input_valid):

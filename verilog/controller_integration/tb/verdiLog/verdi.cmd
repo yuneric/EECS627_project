@@ -246,3 +246,8 @@ srcHBSelect "controller_integration_tb.mmu_dut" -win $_nTrace1
 srcSetScope "controller_integration_tb.mmu_dut" -delim "." -win $_nTrace1
 srcHBSelect "controller_integration_tb.mmu_dut" -win $_nTrace1
 verdiSetActWin -dock widgetDock_<Inst._Tree>
+srcDeselectAll -win $_nTrace1
+verdiSetActWin -dock widgetDock_MTB_SOURCE_TAB_1
+verdiWindowResize -win $_Verdi_1 "1032" "431" "1468" "900"
+verdiWindowResize -win $_Verdi_1 "1032" "462" "1468" "869"
+debExit

@@ -66,7 +66,7 @@ class systolic_array_frontend:
         
         valid_out = 0
         if((self.flush_data) and (self.data_staged == 0) and (self.data_cycles == self.dim) and (self.computation_done)):
-            print('streaming output from array')
+            #print('streaming output from array')
             output = self.array.step(self.act_input, self.weight_input, shift_out=1)
             valid_out = (self.output_cycles >= 1)
             self.output_cycles += 1
@@ -74,7 +74,7 @@ class systolic_array_frontend:
                 self.output_cycles = 0
                 self.flush_data = False
         else:
-            print('normal array function')
+            #print('normal array function')
             output = self.array.step(self.act_input, self.weight_input, shift_out=0)
 
         # Need to know when the last bit of data is through
@@ -88,7 +88,7 @@ class systolic_array_frontend:
 
         # Serializer logic
         if(self.data_staged and (self.data_cycles == self.dim)):
-            print('staged data, loading it into serializers')
+            #print('staged data, loading it into serializers')
             # If the serializers are about to be empty and we have staged data, load it
             for row in range(self.dim):
                 self.act_input[row] = self.act_serializers[row].step(shift=1, input_data=self.act_serial_staged[row], data_valid=1)
@@ -97,7 +97,7 @@ class systolic_array_frontend:
             self.data_cycles = 0     # Reset our data counter
 
         elif(not self.data_staged and (self.data_cycles == self.dim)):
-            print('no data')
+            #print('no data')
             # We have no data
             for row in range(self.dim):
                 self.act_input[row] = 0
@@ -105,7 +105,7 @@ class systolic_array_frontend:
             
         else:
             # Otherwise shift data out as normal and count how much data has been shifted out
-            print('shifting out')
+            #print('shifting out')
             if(self.data_cycles < self.dim):
                 self.data_cycles += 1
                 for row in range(self.dim):
@@ -116,7 +116,7 @@ class systolic_array_frontend:
         if((not self.act_fifo.empty()) and (not self.data_staged) and (not self.flush_data)):
             # Puts the data into our staging buffers for the serializers to keep them fed
             # Stop reading data if we need to flush
-            print('staging data')
+            #print('staging data')
             self.act_serial_staged[self.serializer_sel] = copy.deepcopy(self.act_fifo.read())
             self.weight_serial_staged[self.serializer_sel] = copy.deepcopy(self.weight_fifo.read())
             # If we have staged every row of data, reset for the next round
@@ -126,10 +126,10 @@ class systolic_array_frontend:
                 self.serializer_sel = 0
             # This determines if this is the last piece of data before we flush
             self.flush_data = self.data_info_fifo.read()[0]
-        else:
-            # No ready data
-            print('no ready data')
-            #self.flush_data = 0
+        # else:
+        #     # No ready data
+        #     print('no ready data')
+        #     #self.flush_data = 0
         
         return output, valid_out
 

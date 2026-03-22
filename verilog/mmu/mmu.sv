@@ -62,7 +62,9 @@ module mmu #(
 
     // when bank_sel = 1 in the mem_if then it does read from Bank 0 and reads output from the b0_s1?
     typedef enum logic [2:0] { 
-        IDLE,   // wait for signal from the  
+        IDLE,   // wait for signal from the
+        SETUP_MUL1,
+        SETUP_MUL2,  // added for pipeline the row beats
         SEND_READ_REQ,  // drive AXI AR channel/ wait for arready handshake
         RECEIVE_READ_DATA, // AXI READ: wait for both beats to come back from the axi and then combine them together
         SEND_WRITE_ADDR, // one AXI write burst for the current row
@@ -84,6 +86,20 @@ module mmu #(
     logic beat_toggle; //beat_toggle keeps track of when 2-32 bit data arrives
     logic [DATA_WIDTH-1:0] half_word; //half_word received from axi bus
     // logic [19:0] mem_if_addr; //why is mem_if_addr this big? should only be 12 bits
+    logic [9:0] cfg_N_q;
+    logic [9:0] cfg_W_q;
+    logic [9:0] cfg_H_q;
+    logic [9:0] cfg_words_per_channel_q;
+    logic [9:0] cfg_tile_stride_q;
+
+    logic [19:0] hw_q;
+    logic [19:0] tile_words_q;
+    logic [19:0] tile_stride_words_q;
+
+
+    logic [29:0] kernel_words_mul;
+    assign kernel_words_mul = hw_q * cfg_words_per_channel_q;
+
     logic [11:0] mem_if_addr;
     logic [10:0] row_counter, h_counter;
 
@@ -111,7 +127,6 @@ module mmu #(
     logic [19:0] row_beats_remaining; // axi beats left in the current row
     logic [ADDR_WIDTH-1:0] row_base_addr; //byte address of the start of the current row
 
-
     //THNGS TO DO: 
     //1. FIX THE STRIDE LOGIC and TEST WITH MORE THAN KERNELS
     //2. Make read request and write request logic consistent
@@ -124,8 +139,8 @@ module mmu #(
     //okay now that I've looked through the code -> look through the stride logic and fix that -> then look through nanda.py to understand how it works
 
 
-    always_ff @(posedge i_clk) begin
-        if(~i_rst_n) begin
+    always_ff @(posedge i_clk or negedge i_rst_n) begin
+        if(!i_rst_n) begin
             state               <= IDLE;
             beat_toggle         <= 0;
             half_word           <= 0;
@@ -147,12 +162,23 @@ module mmu #(
             curr_wgt_bank      <= 0;
             // curr_wgt_bank_addr <= 0;
             wgt_bank_addr_tracker <= '0;
+
+            cfg_N_q             <= '0;
+            cfg_W_q             <= '0;
+            cfg_H_q             <= '0;
+            cfg_words_per_channel_q <= '0;
+            cfg_tile_stride_q <= '0;
+
+            hw_q <= '0;
+            tile_words_q <= '0;
+            tile_stride_words_q <= '0;
+
         end else begin
             state <= next_state;
+            
             // o_done <= 0;
                 case(state)
                 IDLE: begin
-
                     //step 1: we set up the op_type
                     if(i_load_tile || i_load_weights || i_store_tile) begin
                         if(i_load_tile) begin
@@ -163,7 +189,13 @@ module mmu #(
                         end else if (i_load_weights) begin
                             op_type <= LOAD_WEIGHTS;
                         end
-                        
+
+                        cfg_N_q             <= i_N;
+                        cfg_W_q             <= i_W;
+                        cfg_H_q             <= i_H;
+                        cfg_words_per_channel_q <= i_words_per_channel;
+                        cfg_tile_stride_q <= i_tile_stride;
+
                         //beat toggle keeps track of whether we're loading high or low bit
                         beat_toggle  <= 0;
 
@@ -179,74 +211,54 @@ module mmu #(
                         // after each row burst is done, we will advance by 
                         // tile_stride * i_words_per_channel * (WORD_SIZE / 8) bytes for the tiles
                         current_addr <= i_addr;
-                       
+                        row_base_addr <= i_addr;
                         // //the total number of beats in a row.
                         // row_beats_total <= i_W * i_words_per_channel * 2;
 
                         // //how many of the beats are remaining per row
-                        // row_beats_remaining <= i_W * i_words_per_channel * 2;
-
-
+                        row_beats_remaining <= '0;
+                        row_beats_total <= '0;
+                        h_counter <= 0;
+                        row_stride_bytes <= 0;
                         //row base addr. what's the difference between row_base_addr and current_addr -> NOTE: come back to this later.
-                        row_base_addr <= i_addr;
+                        
+                        kernel_words <= 0;
+                        kernel_word_count <= 0;
+                        kernel_count <= 0;
+                        curr_wgt_bank <= 0;
+                        wgt_bank_addr_tracker <= '0;
 
-
-                        //if you load weights -> then you have to consider kernel
-                        if (i_load_weights) begin
-                            //this should be fine as long as all the rows in each kernel are traversed through
-                            //h_counter           <= i_H * i_N;
-                            //do it based on kernel count instead
-                            h_counter <= i_N;
-
-                            //row_stride_bytes word size is just 64.
-                            //row_stride_bytes    <= i_W * i_words_per_channel * (WORD_SIZE / 8);
-                            // row_stride_bytes    <= i_W * i_words_per_channel * 8;
-                            row_stride_bytes     <= i_H * i_W * i_words_per_channel * 8;
-
-                            //the total number of words in a kernel
-                            kernel_words        <= i_H * i_W * i_words_per_channel;
-
-                            //counter that keeps track of the pixels that have been processed
-                            kernel_word_count   <= 0;
-
-                            //kernel count is a counter that keeps track of the kernel we're currently processing
-                            //this helps use with sram_select logic
-                            kernel_count        <= 0;
-                            
-                            //curr_wgt_bank keeps track of the current bank sram_sel goes to
-                            curr_wgt_bank       <= 0;
-
-                            //curr_wgt_bank addr keeps track of the sram address we would write to. 
-                            // curr_wgt_bank_addr  <= 0;
-
-                            //replacing with wgt_bank_addr because curr_wgt_bank_addr doesn't keep state (addr of the banks when you start writing back to bank 0) like when you're loading 64+ kernels
-                            wgt_bank_addr_tracker <= '0;
-
-                            //the total number of beats in a row.
-                            row_beats_total <= i_H * i_W * i_words_per_channel * 2;
-
-                            //how many of the beats are remaining per row
-                            row_beats_remaining <= i_H * i_W * i_words_per_channel * 2;
-                        end else begin
-
-                            //else we just have a counter on the height
-                            h_counter        <= i_H;
-
-                            //row stride bytes is set to tile stride -> NOTE: get back to this
-                            // nanda: according to the previous goldebrick before it was changed this is correct
-                            // but now it should be : row_stride_bytes <= i_tile_stride * i_words_per_channel * (WORD_SIZE / 8);
-
-                            //so i_tile stride is like width of the tile
-                            //this works because we write 8 bytes of data times the 64 bit words per channel and then the stride is the actual size of the tile.
-                            row_stride_bytes <= i_tile_stride * i_words_per_channel * 8;
-
-                            //the total number of beats in a row.
-                            row_beats_total <= i_W * i_words_per_channel * 2;
-
-                            //how many of the beats are remaining per row
-                            row_beats_remaining <= i_W * i_words_per_channel * 2;
-                        end 
+                        hw_q <= '0;
+                        tile_words_q <= '0;
+                        tile_stride_words_q <= '0;
                     end
+                end    
+                SETUP_MUL1: begin
+                    hw_q                <= cfg_H_q * cfg_W_q;
+                    tile_words_q        <= cfg_W_q * cfg_words_per_channel_q;
+                    tile_stride_words_q <= cfg_tile_stride_q * cfg_words_per_channel_q;
+
+                end
+                SETUP_MUL2: begin
+                    if(op_type == LOAD_WEIGHTS) begin
+                        h_counter           <= cfg_N_q;
+                        kernel_words        <= kernel_words_mul[19:0];
+                        kernel_word_count   <= 0;
+                        kernel_count        <= 0;
+                        curr_wgt_bank       <= 0;
+                        wgt_bank_addr_tracker <= '0;
+
+                        row_stride_bytes <= ({{(12){1'b0}}, kernel_words_mul[19:0]} << 3);
+                        row_beats_remaining <= kernel_words_mul[19:0] << 1;
+                        row_beats_total <= kernel_words_mul[19:0] << 1;
+                    end else begin
+                        h_counter <= cfg_H_q;
+                        row_stride_bytes    <= ({{(12){1'b0}}, tile_stride_words_q} << 3);
+                        row_beats_total     <= (tile_words_q << 1);
+                        row_beats_remaining <= (tile_words_q << 1);
+
+                    end
+
                 end
                 SEND_READ_REQ: begin
                     // read request
@@ -348,6 +360,7 @@ module mmu #(
                         end else begin
                             beats_per_burst <= row_beats_remaining;
                         end
+                    
                         //reset beat_toggle
                         beat_toggle <= 1'b0;
                     end
@@ -402,21 +415,64 @@ module mmu #(
                         end
                     end
                 end
+                default: begin
+                end
             endcase
         end
 
     end
 
+    always_ff @(posedge i_clk or negedge i_rst_n) begin
+        if(!i_rst_n) begin
+            o_act_wen   <= 0;
+            o_act_waddr <= 0;
+            o_act_wdata <= 0;
+            o_wgt_wen   <= 0;
+            o_wgt_addr  <= 0;
+            o_wgt_wdata <= 0;
+            o_wgt_sram_sel <= 0;
+            o_done <= 1'b0;
+        end else begin
+            o_act_wen   <= 0;
+            o_wgt_wen   <= 0;
+            o_done <= 0;
+
+            // o_done <= 0;
+            if(state == RECEIVE_READ_DATA && i_npu_rvalid && beat_toggle == 1) begin
+                if (op_type == LOAD_TILE) begin
+                    o_act_wen   <= 1;
+                    o_act_waddr <= mem_if_addr; //act_sram address 
+                    o_act_wdata <= {i_npu_rdata,half_word};
+                end else begin
+                    o_wgt_wen      <= 1;
+                    o_wgt_addr     <= wgt_bank_addr_tracker[curr_wgt_bank]; //curr_wgt_bank_addr;
+                    o_wgt_wdata    <= {i_npu_rdata, half_word};
+                    o_wgt_sram_sel <= curr_wgt_bank;
+                end
+            end
+            if(state == RECEIVE_READ_DATA && i_npu_rvalid && i_npu_rlast && (row_beats_remaining <=256) && (row_counter == h_counter - 1))begin
+                o_done <= 1'b1;
+            end
+            if(state == WAIT_WRITE_RESP && i_npu_bvalid) begin
+                if (row_beats_remaining <= 256) begin
+                    if(row_counter == h_counter - 1) begin
+                        o_done <= 1'b1;
+                    end
+                end
+            end
+        end
+    end
+
     always_comb begin
         next_state = state;
-        o_act_wen   = 0;
-        o_act_waddr = 0;
-        o_act_wdata = 0;
-        o_wgt_wen   = 0;
-        o_wgt_addr  = 0;
-        o_wgt_wdata = 0;
-        o_wgt_sram_sel = 0;
-        o_done  = 0;
+        // o_act_wen   = 0;
+        // o_act_waddr = 0;
+        // o_act_wdata = 0;
+        // o_wgt_wen   = 0;
+        // o_wgt_addr  = 0;
+        // o_wgt_wdata = 0;
+        // o_wgt_sram_sel = 0;
+        // o_done  = 0;
         o_npu_araddr = 0; // the addr for this burst
         o_npu_arlen = 0;
         o_npu_arsize = '0;
@@ -442,14 +498,21 @@ module mmu #(
             //in the idle state
             IDLE: begin
                 //if load tile or load weights we want to send read requests from off chip memory
-                if (i_load_tile || i_load_weights) begin
-                    next_state = SEND_READ_REQ;
-                end else if (i_store_tile) begin
-                    next_state = SEND_WRITE_ADDR;
-                end
+                if (i_load_tile || i_load_weights || i_store_tile) begin
+                    next_state = SETUP_MUL1;
+                end 
                 // keep waiting until controller give you a signal
             end
-
+            SETUP_MUL1: begin
+                next_state = SETUP_MUL2;
+            end
+            SETUP_MUL2: begin
+                if(op_type == STORE_TILE) begin
+                    next_state = SEND_WRITE_ADDR;
+                end else begin
+                    next_state = SEND_READ_REQ;
+                end
+            end
             SEND_READ_REQ : begin
                 o_npu_araddr = current_addr; // the addr for this burst
                 //o_npu_arlen = beats_per_burst - 1; // number of beats in one burst
@@ -466,20 +529,6 @@ module mmu #(
             RECEIVE_READ_DATA: begin
                 //signaling that we're ready to receive data
                 o_npu_rready = 1; 
-                // beat
-                if (i_npu_rvalid && beat_toggle == 1) begin
-                    if (op_type == LOAD_TILE) begin
-                        o_act_wen   = 1;
-                        o_act_waddr = mem_if_addr; //act_sram address 
-                        o_act_wdata = {i_npu_rdata,half_word};
-                    end else begin
-                        o_wgt_wen      = 1;
-                        o_wgt_addr     = wgt_bank_addr_tracker[curr_wgt_bank]; //curr_wgt_bank_addr;
-                        o_wgt_wdata    = {i_npu_rdata, half_word};
-                        o_wgt_sram_sel = curr_wgt_bank;
-                    end
-                end
-
                 //the the data is valid and its the last, then check if we're at our last burst and if we're at our last burst we check the counter to see if we still have rows to process.
                 if (i_npu_rvalid && i_npu_rlast) begin
                     if (row_beats_remaining <= 256) begin
@@ -489,7 +538,7 @@ module mmu #(
                             next_state = IDLE;
 
                             //signal done
-                            o_done     = 1;
+                            // o_done     = 1;
                         //else stay in read request
                         end else begin
                             next_state = SEND_READ_REQ;
@@ -553,7 +602,7 @@ module mmu #(
                         // row is finished
                         if (row_counter == h_counter - 1) begin
                             next_state = IDLE;
-                            o_done     = 1;
+                            //o_done     = 1;
                         end else begin
                             // more rows to fetch issue the next rows's write addr
                             next_state = SEND_WRITE_ADDR;
