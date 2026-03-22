@@ -79,11 +79,6 @@ module computation_overseer #(
 );
 
 
-    // FSM
-    // localparam [3:0]
-    //     IDLE       = 0, CONFIG     = 1, ST_SETUP  = 2, KG_SETUP  = 3,
-    //     FEED_ADDR  = 4, FEED_WRITE = 5, DRAIN     = 6, OUTPUT_WB = 7,
-    //     KG_NEXT    = 8, ST_NEXT    = 9;
     localparam [2:0] IDLE = 0, SETUP = 1, TILE_SETUP = 2, COMPUTE = 3, WAIT_FOR_DRAIN = 4, DRAIN = 5;
 
     //state logic
@@ -95,6 +90,7 @@ module computation_overseer #(
     logic  [WORD_SIZE-1:0] drain_wdata; //the 64-bit data written from the drain
 
 
+    //assign the drain write info to the output port. 
     assign o_comp_waddr = curr_drain_waddr;
     assign o_comp_wen = drain_wen;
     assign o_comp_wdata = drain_wdata;
@@ -151,30 +147,12 @@ module computation_overseer #(
     //when send advance, you allow next weight address to be calculated.
 
 
-    wire fifo_stall = |(i_sa_fifo_full & active);
-
-    reg                    p_act_valid;
-    reg [NUM_ARRAYS-1:0]  p_kern_valid;
-    reg                    p_last;
-
-    reg [DATA_WIDTH-1:0]   obuf [0:NUM_ARRAYS-1][0:DIM-1];
-    reg [3:0]              cap_cnt [0:NUM_ARRAYS-1];
-    reg [NUM_ARRAYS-1:0]   cap_done;
-    reg [3:0]              wb_pix, wb_arr;
-
-    //why no assign statements here
-    wire [DIM_FIELD_WIDTH-1:0] co_remaining = d_comp_num_kernels - curr_kernel_group * NUM_ARRAYS;
-    wire [3:0] n_active_m1 = (co_remaining >= NUM_ARRAYS) ? (NUM_ARRAYS - 1) : co_remaining[3:0] - 1;
-
     wire ic_start, ic_advance;
     wire [ACT_ADDR_WIDTH-1:0] ic_act_addr;
     wire                      ic_act_valid;
     wire [WT_ADDR_WIDTH-1:0]  ic_wt_addr;
     wire                      ic_wt_valid;
     wire                      ic_data_last, ic_addr_valid, ic_busy, ic_done;
-
-    wire [WT_ADDR_WIDTH-1:0] ksz = i_cfg_Hf * i_comp_Wf * i_cfg_words_ci;
-    reg  [WT_ADDR_WIDTH-1:0] kg_wt_off;
 
     im2col_gen u_im2col(
         .i_clk(i_clk),
@@ -202,34 +180,6 @@ module computation_overseer #(
         // .o_busy(ic_busy), 
         .o_done(ic_done)
     );
-
-    // assign ic_start   = (state == KG_SETUP);
-    // assign ic_advance = (state == FEED_WRITE) && !fifo_stall;
-
-    //start with next state and go from there
-    // always @(*) begin
-    //     next_state = state;
-    //     case (state)
-    //         IDLE:       if (i_start) nxt = CONFIG;
-    //         CONFIG:     nxt = ST_SETUP;
-    //         ST_SETUP:   nxt = KG_SETUP;
-    //         KG_SETUP:   nxt = FEED_ADDR;
-    //         FEED_ADDR:  if (ic_addr_valid) nxt = FEED_WRITE;
-    //         FEED_WRITE: begin
-    //             if (fifo_stall)        nxt = FEED_WRITE;
-    //             else if (p_last)       nxt = DRAIN;
-    //             else                   nxt = FEED_ADDR;
-    //         end
-    //         DRAIN:      if ((i_sa_flush_done & active) == active) nxt = OUTPUT_WB;
-    //         OUTPUT_WB:  if (wb_pix == DIM-1 && wb_arr == n_active_m1) nxt = KG_NEXT;
-    //         KG_NEXT:    nxt = (curr_kernel_group == num_kg - 1) ? ST_NEXT : KG_SETUP;
-    //         ST_NEXT: begin
-    //             if (curr_tile_x == num_tiles_in_width - 1 && curr_tile_y == num_tiles_in_height - 1) nxt = IDLE;
-    //             else nxt = ST_SETUP;
-    //         end
-    //         default:    nxt = IDLE;
-    //     endcase
-    // end
 
     //so there is moving to next kernel
     //there is moving to next tile -> both x and y
@@ -468,10 +418,7 @@ module computation_overseer #(
             end
 
             //we want to set i_pop_data equal to the data sent to mem_if
-            drain_wdata <= i_pop_data;
-
-
-            
+            drain_wdata <= i_pop_data;        
         end
     end
 
@@ -485,143 +432,5 @@ module computation_overseer #(
             drain_wen = 1;
         end
     end
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            curr_tile_x <= 0; curr_tile_y <= 0; curr_kernel_group <= 0;
-        end else case (state)
-            CONFIG:   begin curr_tile_x <= 0; curr_tile_y <= 0; curr_kernel_group <= 0; end
-            ST_SETUP: curr_kernel_group <= 0;
-            KG_SETUP: kg_wt_off <= curr_kernel_group * ksz;
-            ST_NEXT: begin
-                if (curr_tile_x < num_tiles_in_width - 1)
-                    curr_tile_x <= curr_tile_x + 1;
-                else begin
-                    curr_tile_x <= 0;
-                    curr_tile_y <= curr_tile_y + 1;
-                end
-            end
-            KG_NEXT: curr_kernel_group <= curr_kernel_group + 1;
-            default: ;
-        endcase
-    end
-
-    // x_bound = min(Wo - top_left_output_pixel_x - 1, 3)
-    // y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
-    always @(posedge i_clk) begin
-        if (state == CONFIG || state == ST_SETUP) begin
-            x_bound <= ((d_comp_Wo- {curr_tile_x, 2'b00}) > 4) ? 2'd3
-                     : d_comp_Wo- {curr_tile_x, 2'b00} - 1;
-            y_bound <= ((d_comp_Ho- {curr_tile_y, 1'b0}) >= 2) ? 1'b1 : 1'b0;
-        end
-    end
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n)
-            active <= 0;
-        else if (state == KG_SETUP) begin
-            if (co_remaining >= NUM_ARRAYS) active <= {NUM_ARRAYS{1'b1}};
-            else                            active <= (1 << co_remaining) - 1;
-        end
-    end
-
-    integer ai;
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            o_act_rd_addr <= 0; o_act_rd_en <= 0;
-            o_wt_rd_addr <= 0; o_wt_rd_en <= 0;
-            p_act_valid <= 0; p_kern_valid <= 0; p_last <= 0;
-        end else if (state == FEED_ADDR && ic_addr_valid) begin
-            o_act_rd_addr <= ic_act_valid ? ic_act_addr : {ACT_ADDR_WIDTH{1'b0}};
-            o_act_rd_en   <= 1;
-
-            for (ai = 0; ai < NUM_ARRAYS; ai = ai + 1) begin
-                o_wt_rd_addr[ai*WT_ADDR_WIDTH +: WT_ADDR_WIDTH]
-                    <= (active[ai] && ic_wt_valid)
-                       ? (ic_wt_addr + kg_wt_off + ai[WT_ADDR_WIDTH-1:0] * ksz)
-                       : {WT_ADDR_WIDTH{1'b0}};
-                o_wt_rd_en[ai] <= active[ai];
-            end
-
-            p_act_valid  <= ic_act_valid;
-            p_kern_valid <= active & {NUM_ARRAYS{ic_wt_valid}};
-            p_last       <= ic_data_last;
-        end else begin
-            o_act_rd_en <= 0;
-            o_wt_rd_en  <= 0;
-        end
-    end
-
-    integer fi;
-    always @(*) begin
-        o_sa_wr_en = 0; o_sa_wr_act_data = 0;
-        o_sa_wr_wt_data = 0; o_sa_wr_data_last = 0;
-
-        if (state == FEED_WRITE && !fifo_stall) begin
-            o_sa_wr_act_data = p_act_valid ? i_act_rd_data : {DATA_WIDTH{1'b0}};
-            for (fi = 0; fi < NUM_ARRAYS; fi = fi + 1) begin
-                if (active[fi]) begin
-                    o_sa_wr_en[fi] = 1;
-                    o_sa_wr_wt_data[fi*DATA_WIDTH +: DATA_WIDTH]
-                        = p_kern_valid[fi] ? i_wt_rd_data[fi*DATA_WIDTH +: DATA_WIDTH]
-                                           : {DATA_WIDTH{1'b0}};
-                    o_sa_wr_data_last[fi] = p_last;
-                end
-            end
-        end
-    end
-
-    integer ci, di;
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            cap_done <= 0;
-            for (ci = 0; ci < NUM_ARRAYS; ci = ci + 1) cap_cnt[ci] <= 0;
-        end else if (state == KG_SETUP) begin
-            cap_done <= 0;
-            for (di = 0; di < NUM_ARRAYS; di = di + 1) cap_cnt[di] <= 0;
-        end else if (state == DRAIN || state == OUTPUT_WB) begin
-            for (ci = 0; ci < NUM_ARRAYS; ci = ci + 1) begin
-                if (i_sa_valid_out[ci] && active[ci] && !cap_done[ci]) begin
-                    obuf[ci][DIM - 1 - cap_cnt[ci]] <= i_sa_data_out[ci*DATA_WIDTH +: DATA_WIDTH];
-                    if (cap_cnt[ci] == DIM - 1) cap_done[ci] <= 1;
-                    cap_cnt[ci] <= cap_cnt[ci] + 1;
-                end
-            end
-        end
-    end
-
-    wire [1:0]                 wb_px = wb_pix[1:0];
-    wire                       wb_py = wb_pix[2];
-    wire [DIM_FIELD_WIDTH+1:0] abs_x = {curr_tile_x, 2'b00} + {{DIM_FIELD_WIDTH{1'b0}}, wb_px};
-    wire [DIM_FIELD_WIDTH:0]   abs_y = {curr_tile_y, 1'b0}   + {{DIM_FIELD_WIDTH{1'b0}}, wb_py};
-
-    wire [OUT_ADDR_WIDTH-1:0] wb_addr =
-        (abs_y * d_comp_Wo+ abs_x) * d_comp_num_kernels + curr_kernel_group * NUM_ARRAYS + wb_arr;
-
-    always @(posedge i_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            wb_pix <= 0; wb_arr <= 0;
-        end else if (state == KG_SETUP) begin
-            wb_pix <= 0; wb_arr <= 0;
-        end else if (state == OUTPUT_WB) begin
-            if (wb_arr == n_active_m1) begin
-                wb_arr <= 0;
-                wb_pix <= wb_pix + 1;
-            end else
-                wb_arr <= wb_arr + 1;
-        end
-    end
-
-    always @(*) begin
-        o_out_wr_en = 0; o_out_wr_addr = 0; o_out_wr_data = 0;
-        if (state == OUTPUT_WB && wb_px <= x_bound && wb_py <= y_bound) begin
-            o_out_wr_en   = 1;
-            o_out_wr_addr = wb_addr;
-            o_out_wr_data = obuf[wb_arr][wb_pix];
-        end
-    end
-
-    assign o_busy = (state != IDLE);
-    assign o_done = (state == ST_NEXT) && (curr_tile_x == num_tiles_in_width-1) && (curr_tile_y == num_tiles_in_height-1);
 
 endmodule
