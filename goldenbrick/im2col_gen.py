@@ -370,7 +370,7 @@ def run_comp_over_test(activations, weights, stride, padding, maxpool, relu_en, 
     comp_test_out = open('comp_over_test.out', 'a')
     comp_test_in.write(f'comp_Hi: {Hi:03x} comp_Wi: {Wi:03x} comp_Hf: {Hf:03x} comp_Wf: {Wf:03x} comp_Ho: {Ho:03x} comp_Wo: {Wo:03x} '
                        f'comp_words_per_channel: {words_needed_for_Ci:03x} comp_num_kernels: {Co:03x} ' 
-                       f'comp_stride: {stride:02b} comp_padding: {padding:02b} comp_maxpool_en: {maxpool:01b} comp_relu_en: {relu_en:01b}\n')
+                       f'comp_stride: {stride:02b} comp_padding: {padding:02b} comp_maxpool_en: {maxpool:01b}\n')
     
     # Make an in code model of the output mem that we are creating so we can check our reconstruction
     output_mem = np.empty((correct_ofmap.shape), dtype=np.int8)

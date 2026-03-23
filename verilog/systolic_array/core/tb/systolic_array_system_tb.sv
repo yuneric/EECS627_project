@@ -8,7 +8,7 @@ module systolic_array_system_tb;
     parameter OUTPUT_WIDTH = 8;
     parameter SHIFT_WIDTH  = 5;
     parameter FIFO_DEPTH   = 32; 
-    parameter NUM_TESTS    = 14;
+    parameter NUM_TESTS    = 114;
     // parameter MAX_CYCLES   = 500;
 
     parameter ACT_VEC_W    = DATA_WIDTH * ARRAY_SIZE;
@@ -248,13 +248,13 @@ module systolic_array_system_tb;
                     input_weight_wr_data <= weight_data[write_idx];
                     input_data_last      <= (write_idx == data_len - 1) ? 1'b1 : 1'b0;
                     input_wr_en          <= 1;
-                    $display("  [cycle %0t] FIFO write %0d: act=%h weight=%h last=%0b",
-                            $time, write_idx, act_data[write_idx], weight_data[write_idx],
-                            (write_idx == data_len - 1));
+                    // $display("  [cycle %0t] FIFO write %0d: act=%h weight=%h last=%0b",
+                    //         $time, write_idx, act_data[write_idx], weight_data[write_idx],
+                    //         (write_idx == data_len - 1));
                     write_idx = write_idx + 1;
                 end else begin
                     input_wr_en <= 0;
-                    $display("  [cycle %0t] FIFO full, stalling write %0d", $time, write_idx);
+                    // $display("  [cycle %0t] FIFO full, stalling write %0d", $time, write_idx);
                 end
                 // Insert a long wait
             end

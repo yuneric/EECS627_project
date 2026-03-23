@@ -31,16 +31,6 @@ module systolic_array_system #(
     wire                              fe_result_valid;
 
     wire [ARRAY_SIZE-1:0]             out_valid_vec;  // per-column valid from array
-    
-    `ifdef SYN
-    initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf", sa_slice_tb.dut);
-    end
-    `else
-    initial begin
-        $display("[%0t] SYN not defined, no SDF annotation", $time);
-    end
-    `endif
 
     systolic_array_front #(
         .ARRAY_SIZE(ARRAY_SIZE),

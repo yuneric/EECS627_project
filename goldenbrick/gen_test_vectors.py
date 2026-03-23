@@ -17,6 +17,7 @@ The Verilog TB drives the frontend FIFO interface and compares outputs.
 import numpy as np
 import os
 import json
+import random
 
 def to_twos_comp(val, bits):
     """Convert signed integer to two's complement hex string."""
@@ -412,6 +413,22 @@ def main():
         relu_en=True, shift_by=12, maxpool_en=True,
         out_dir=out_dir
     ))
+
+    # Im just making stuff up now
+    random.seed(42)
+    for test in range(100):
+        dim = 8
+        data_len = random.randint(1, 100) * dim
+        shift_by = random.randint(0, 16)
+        relu_en = random.randint(0, 1)
+        maxpool_en = random.randint(0, 1)
+        configs.append(generate_test_case(
+            test_id=14 + test, 
+            dim=dim, data_len=data_len,
+            act_range=(-10, 10), weight_range=(-10, 10),
+            relu_en=relu_en, shift_by=shift_by, maxpool_en=maxpool_en,
+            out_dir=out_dir
+        ))
 
     # Write number of tests
     with open(os.path.join(out_dir, "num_tests.hex"), 'w') as f:

@@ -49,6 +49,7 @@ module computation_overseer #(
     // Input Fifo
     //TODO: need to ask about these signals -> probably have to interface with im2col_gen don't worry about this.
     output  logic o_push_en,
+    output logic o_data_last,
     input logic [DIM-1:0] i_push_fifo_full, //we need to get stuff from of our slices
 
     // Local weight SRAM ports - should get wt_sram_rd addr and en from im2col
@@ -72,8 +73,8 @@ module computation_overseer #(
 
     //from sa_slice - async fifos - need to edit in systolic array slice
     input logic [DIM-1:0] i_almost_empty, //2 (max_pool enabled)
-    input logic [DIM-1:0] i_rd_full, //8 have all data.
-    input logic [DIM-1:0] i_rd_empty //async 
+    input logic [DIM-1:0] i_rd_full //8 have all data.
+    // input logic [DIM-1:0] i_rd_empty //async 
 
 );
 
@@ -191,6 +192,8 @@ module computation_overseer #(
         .o_im2col_done(ic_done)
     );
 
+    assign o_data_last = ic_done;
+
     //so there is moving to next kernel
     //there is moving to next tile -> both x and y
 
@@ -238,13 +241,13 @@ module computation_overseer #(
                 //     next_state = DRAIN;
                 // end
                 //now waiting for all the output data to arrive before we move to the drain state
-                if((d_comp_maxpool_en && (&i_almost_empty)) || (&i_rd_full)) begin
+                if(d_comp_maxpool_en && (&(~i_almost_empty | ~active)) || (&(i_rd_full | ~active))) begin
                     next_state = DRAIN;
                 end
             DRAIN:
                 //we could just do empty
                 //and all the signals so fully empty -> all systolic array output buffers are empty.
-                if (&i_rd_empty) begin
+                if (&i_pop_empty) begin
                     next_state = TILE_SETUP;
                 end
             default: next_state = IDLE; // Good practice guardrail

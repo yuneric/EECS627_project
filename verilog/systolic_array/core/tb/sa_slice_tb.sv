@@ -10,7 +10,7 @@ module sa_slice_tb;
     parameter OUTPUT_WIDTH = 8;
     parameter SHIFT_WIDTH  = 5;
     parameter FIFO_DEPTH   = 32; 
-    parameter NUM_TESTS    = 14;
+    parameter NUM_TESTS    = 114;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
     localparam int ACT_VEC_W = DATA_WIDTH * ARRAY_SIZE;
