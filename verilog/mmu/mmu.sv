@@ -1,7 +1,9 @@
 module mmu #( 
-    parameter ADDR_WIDTH = 32, 
-    parameter DATA_WIDTH = 32,
-    parameter WORD_SIZE = 64
+    parameter CPU_ADDR_WIDTH = 32, 
+    parameter CPU_DATA_WIDTH = 32,
+    parameter NPU_ACT_ADDR_WIDTH = 12,
+    parameter NPU_WT_ADDR_WIDTH = 11,
+    parameter NPU_DATA_WIDTH = 64
 ) (
     input  i_clk,
     input  i_rst_n,
@@ -14,44 +16,44 @@ module mmu #(
     input  [9:0] i_W,
     input  [9:0] i_H, 
     input  [9:0] i_words_per_channel, // how many 64-bit words make up all the channels per pixel
-    input  [ADDR_WIDTH-1:0] i_addr, // base addr in off chip mem
+    input  [CPU_ADDR_WIDTH-1:0] i_addr, // base addr in off chip mem
     input  [9:0] i_tile_stride, // row pitch of the full feature map, so skip these many to get the next row
 
     output logic o_done,
 
 
-    output logic [10:0] o_wgt_addr, // which address in SRAM to write to
+    output logic [NPU_WT_ADDR_WIDTH-1:0] o_wgt_addr, // which address in SRAM to write to
     output logic o_wgt_wen, 
-    output logic [WORD_SIZE - 1:0] o_wgt_wdata,
+    output logic [NPU_DATA_WIDTH - 1:0] o_wgt_wdata,
     output logic [2:0] o_wgt_sram_sel, // which sram bnk within the SAs to write to
 
 
-    output logic [ADDR_WIDTH - 1:0] o_act_waddr, 
+    output logic [NPU_ACT_ADDR_WIDTH - 1:0] o_act_waddr, 
     output logic o_act_wen, 
-    output logic [WORD_SIZE - 1:0] o_act_wdata,
-    output logic [ADDR_WIDTH - 1:0] o_act_raddr, 
+    output logic [NPU_DATA_WIDTH - 1:0] o_act_wdata,
+    output logic [NPU_ACT_ADDR_WIDTH - 1:0] o_act_raddr, 
     output logic o_act_ren,
 
-    input  [WORD_SIZE- 1:0] i_act_rdata, 
+    input  [NPU_DATA_WIDTH- 1:0] i_act_rdata, 
 
     //all the npu signals from axi_arbiter
-    output  logic [ADDR_WIDTH-1:0] o_npu_araddr, //the address we want to read from the starting address.
+    output  logic [CPU_ADDR_WIDTH-1:0] o_npu_araddr, //the address we want to read from the starting address.
     output  logic [7:0]            o_npu_arlen, //the total number of bursts number of the 
     output  logic [2:0]            o_npu_arsize, //the size of one beat.
     output  logic                  o_npu_arvalid, //the npu sends that it is sending a valid address for read
     
     input                           i_npu_arready, //arready is set when arbiter received address
-    input  [DATA_WIDTH-1:0]         i_npu_rdata, //read data.
+    input  [CPU_DATA_WIDTH-1:0]         i_npu_rdata, //read data.
     input                           i_npu_rlast, //rlast; done reading the bursts. 
     input                           i_npu_rvalid, //the data being sent is valid
     output  logic                   o_npu_rready, //is the npu ready to receive data.
 
-    output logic [ADDR_WIDTH-1:0] o_npu_awaddr,
+    output logic [CPU_ADDR_WIDTH-1:0] o_npu_awaddr,
     output logic [7:0]            o_npu_awlen,
     output logic [2:0]            o_npu_awsize,
     output logic                  o_npu_awvalid,
     input  logic                  i_npu_awready,
-    output logic [DATA_WIDTH-1:0] o_npu_wdata,
+    output logic [CPU_DATA_WIDTH-1:0] o_npu_wdata,
     output logic [3:0]            o_npu_wstrb,
     output logic                  o_npu_wlast,
     output logic                  o_npu_wvalid,
@@ -84,7 +86,7 @@ module mmu #(
     op_type_t op_type; //type of operation
 
     logic beat_toggle; //beat_toggle keeps track of when 2-32 bit data arrives
-    logic [DATA_WIDTH-1:0] half_word; //half_word received from axi bus
+    logic [CPU_DATA_WIDTH-1:0] half_word; //half_word received from axi bus
     // logic [19:0] mem_if_addr; //why is mem_if_addr this big? should only be 12 bits
     logic [9:0] cfg_N_q;
     logic [9:0] cfg_W_q;
@@ -115,17 +117,17 @@ module mmu #(
 
     //logic [9:0] tile_stride;
     //TODO: might not need this everywhere
-    logic [ADDR_WIDTH-1:0] current_addr; // byte address of the axi burst 
+    logic [CPU_ADDR_WIDTH-1:0] current_addr; // byte address of the axi burst 
 
     //also row_stride_bytes
-    logic [ADDR_WIDTH-1:0] row_stride_bytes; // controller off chip row jump
+    logic [CPU_ADDR_WIDTH-1:0] row_stride_bytes; // controller off chip row jump
     logic [9:0] beats_per_burst; //has to be less than 256
 
 
     //TODO: need to think about the sizes of this bus - what is the max we'll get?
     logic [19:0] row_beats_total; // total axi beats needed for the row
     logic [19:0] row_beats_remaining; // axi beats left in the current row
-    logic [ADDR_WIDTH-1:0] row_base_addr; //byte address of the start of the current row
+    logic [CPU_ADDR_WIDTH-1:0] row_base_addr; //byte address of the start of the current row
 
     //THNGS TO DO: 
     //1. FIX THE STRIDE LOGIC and TEST WITH MORE THAN KERNELS
@@ -209,7 +211,7 @@ module mmu #(
                         // each pixel has 16 channels 
                         // pack 8 channels into one 64-bit word uno, so one pixel needs 16/8 = N words (64 bit long) --> i_words_per_channel
                         // after each row burst is done, we will advance by 
-                        // tile_stride * i_words_per_channel * (WORD_SIZE / 8) bytes for the tiles
+                        // tile_stride * i_words_per_channel * (NPU_DATA_WIDTH / 8) bytes for the tiles
                         current_addr <= i_addr;
                         row_base_addr <= i_addr;
                         // //the total number of beats in a row.
@@ -342,7 +344,7 @@ module mmu #(
                             //else we have 256 length beats
                             end else begin
                                 row_beats_remaining <= row_beats_remaining - 256;
-                                //current_addr <= current_addr + (256 * (DATA_WIDTH / 8));
+                                //current_addr <= current_addr + (256 * (CPU_DATA_WIDTH / 8));
                                 current_addr <= current_addr + (256 * 4);
                             end
                         end
@@ -410,7 +412,7 @@ module mmu #(
                         end else begin
                             //we still have 256 beats amount or more to issue
                             row_beats_remaining <= row_beats_remaining - 256;
-                            //current_addr  <= current_addr + (256 * (DATA_WIDTH / 8));
+                            //current_addr  <= current_addr + (256 * (CPU_DATA_WIDTH / 8));
                             current_addr  <= current_addr + (256 * 4);
                         end
                     end
@@ -517,7 +519,7 @@ module mmu #(
                 o_npu_araddr = current_addr; // the addr for this burst
                 //o_npu_arlen = beats_per_burst - 1; // number of beats in one burst
                  o_npu_arlen = (row_beats_remaining > 256) ? 8'd255 : (row_beats_remaining - 1);
-                // o_npu_arsize = $clog2(DATA_WIDTH/8);
+                // o_npu_arsize = $clog2(CPU_DATA_WIDTH/8);
                 //always going to be 32-bit sized beats
                 o_npu_arsize = 3'b010;
                 o_npu_arvalid = 1'b1;

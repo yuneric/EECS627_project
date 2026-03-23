@@ -160,10 +160,12 @@ module sa_slice_tb;
         wt_wr_data        = '0;
 
         @(negedge clk_sys);
-        repeat (10) @(negedge clk_sys);
-        repeat (10) @(negedge clk_sa);
-        rst_n = 1;
+        repeat (10) @(posedge clk_sys);
+        repeat (10) @(posedge clk_sa);
         @(posedge clk_sys);
+        rst_n = 1;
+        repeat (3) @(posedge clk_sys);
+        repeat (3) @(posedge clk_sa);
         for (int r = 0; r < data_len; r++) begin
             @(negedge clk_sys);
             write_weight(r, {DW{1'b0}});

@@ -16,47 +16,23 @@ from matgen import *
 from systolic_array_block_be import systolic_array_backend
 from systolic_array_block_fe import systolic_array_frontend
 
-# Global constants
-dim = 8
-num_arrays = 8
-#num_arrays = 8
-word_size = 8
-bit_size = 8
-main_mem_depth = 4096 #32kB each
-#main mem depth by word size
-main_mem_size = main_mem_depth * word_size
-weight_mem_depth = 2048 #16kB each
-weight_mem_size = weight_mem_depth * word_size
 
-def run_im2col_gen(activations, weights, options):
-
-    # Get our dimensions
-    Hi, Wi, Ci = activations.shape
-    Co, Hf, Wf, Ci = weights.shape
-    stride = options.stride
-    padding = options.padding
+def dim_check_fast(Hi, Wi, Ci, Co, Hf, Wf, stride, padding, maxpool=0):
 
     Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride, padding)
 
-    print(f'Input shape: Hi: {Hi} Wi: {Wi} Ci: {Ci}')
-    print(f'Kernel shape: Hf: {Hf} Wf: {Wf} Ci: {Ci} Co: {Co}')
-    print(f'Output shape: Ho: {Ho} Wo: {Wo} Co: {Co}')
-    print(f'Stride: {stride} Padding: {padding}')
+    pad = 4 - (Wo % 4)
+    Wo += pad
+    pad = 4 - (Wo % 4)
+    Ho += pad
 
+    if(maxpool):
+        Wo = Wo//2
+        Ho = Ho//2
+        
     # Need to account for the fact that we are zero padding channels
     words_needed_for_Ci = math.ceil(Ci/word_size)
     num_words_for_output_channels = math.ceil(Co/word_size)
-    # if options.verbose:
-    #     print(f"words needed for channels: {words_needed_for_Ci} ")
-    print(f"words needed for channels: {words_needed_for_Ci} ")
-
-    # Calculate our mem sizes
-    # if options.verbose:
-    #     print(f'main mem size for inputs/outputs: {main_mem_size//1024} kB')
-    #     print(f'weight mem size for weights: {weight_mem_size//1024} kB')
-    print(f'main mem size for inputs/outputs: {main_mem_size//1024} kB')
-    print(f'weight mem size for weights: {weight_mem_size//1024} kB')
-    print(f'weight mem size for weights total: {8*weight_mem_size//1024} kB')
 
     # Determine how much space our inputs, weights, and outputs take up
     activation_size = Hi * Wi * words_needed_for_Ci * word_size
@@ -64,22 +40,39 @@ def run_im2col_gen(activations, weights, options):
     num_rows_per_kernel = Hf * Wf * words_needed_for_Ci
     kernels_size = kernel_size_single * Co # We can operate on 8 kernels at a time
     output_size = Wo * Ho * num_words_for_output_channels * word_size
-    # if options.verbose:
-    print(f"activation size: {activation_size//1024} kB")
-    print(f"kernels size: {kernels_size//1024} kB")
-    print(f"output size: {output_size//1024} kB")
+
+    max_num_kernels = (Co // 64) * 8
+    kernels_left = Co % 64
+    if kernels_left >= 8:
+        max_num_kernels += 8
+    else:
+        max_num_kernels += kernels_left
+
 
     if(main_mem_size < activation_size):
-        print("ERROR: activations too big")
-        exit(1)
+        return 1
 
     if(main_mem_size < output_size):
-        print("ERROR: outputs too big")
-        exit(1)
+        return 1
 
-    if(8*weight_mem_size < kernels_size):
-        print("ERROR: kernels too big")
-        exit(1)
+    if(weight_mem_size < (max_num_kernels*kernel_size_single)):
+        # print(max_num_kernels)
+        # print(f'Hf: {Hf} Wf: {Wf} Ci: {Ci} Co: {Co}')
+        return 1
+
+    return 0
+
+def run_im2col_gen(activations, weights, stride, padding, options):
+
+    # Get our dimensions
+    Hi, Wi, Ci = activations.shape
+    Co, Hf, Wf, Ci = weights.shape
+    Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride, padding)
+
+    words_needed_for_Ci = math.ceil(Ci/word_size)
+    num_words_for_output_channels = math.ceil(Co/word_size)
+    kernel_size_single =  Hf * Wf * words_needed_for_Ci * word_size
+    num_rows_per_kernel = Hf * Wf * words_needed_for_Ci
 
     if options.debug:
         activations = debug_mat_gen_HWC(Hi, Wi, Ci)
@@ -93,7 +86,11 @@ def run_im2col_gen(activations, weights, options):
     # Make mem model
     main_mem = make_memory_model(activations, word_size)
     weight_mem = make_memory_model(weights, word_size)
-
+    if main_mem.shape[0] > 4096:
+        print(f"MAIN MEM TOO BIG rows: {main_mem.shape[0]}")
+    if weight_mem.shape[0] > 2048*8:
+        print(f"WEIGHT MEM TOO BIG rows: {weight_mem.shape[0]}")
+        
     # Do the tiling
     # We calculate 8 channels at a time using our systolic arrays (1 kernel/channel per col)
     # We calculate 8 pixels of the output at a time (8 rows)
@@ -109,8 +106,9 @@ def run_im2col_gen(activations, weights, options):
     # Lowered ifmap dimensions
     lowered_act_rows = Wo * Ho
     lowered_act_cols = Wf * Hf * words_needed_for_Ci
-    print(f"Kernel groups: {kernel_groups}") 
-    print(f"Num tiles in output: {num_tiles}") 
+    if options.verbose:
+        print(f"Kernel groups: {kernel_groups}") 
+        print(f"Num tiles in output: {num_tiles}") 
     # The tiled lowered act matrix is dim rows by however many cols the lowered act matrix
     # The tiled lowered weight matrix is dim cols with however many rows the lowered weight matrix
     if options.debug:
@@ -126,7 +124,7 @@ def run_im2col_gen(activations, weights, options):
     kernels_left = Co
 
     if options.im2col_test:
-        im2col_test_file = open('im2col_test.txt', 'w')
+        im2col_test_file = open('im2col_test.txt', 'a')
 
     # Loop for each group of 64 kernels
     for kernel_group in range(kernel_groups):
@@ -241,10 +239,20 @@ def run_im2col_gen(activations, weights, options):
                                     cnt += 1
                                     kernel_num = row + (dim) * kernel_group
                                     weight_mem_address = ((weight_pixel_x + weight_pixel_y*Wf) * words_needed_for_Ci) + word_idx + (kernel_num * num_rows_per_kernel)
+                                    #im2col_test_file.write(f'{mem_address}\n')
+                                    if(mem_address < 0 or mem_address >= 2**12 - 1):
+                                        mem_address = 0
+                                    # if(weight_mem_address > 2047):
+                                    #     print(weight_mem_address)
+                                    #     print(Hi, Wi, Hf, Wf, Ci, Ho, Wo, Co)
+                                    #     print(row, dim, kernel_group, weight_pixel_x, weight_pixel_y, Wf, words_needed_for_Ci, word_idx, kernel_num, num_rows_per_kernel)
+                                    if(weight_mem_address < 0 or weight_mem_address >= 2**11 - 1):
+                                        weight_mem_address = 0
                                     im2col_test_file.write(f'{mem_address:03x} {(valid_out and valid_in):d} {weight_mem_address:03x} ' 
                                         f'{array_enable[7]:d}{array_enable[6]:d}{array_enable[5]:d}{array_enable[4]:d}' 
                                         f'{array_enable[3]:d}{array_enable[2]:d}{array_enable[1]:d}{array_enable[0]:d} ' 
                                         f'{(cnt == total):d}\n')
+                                    
 
                                 # row in dim
                             lowered_act_col += 1
@@ -285,16 +293,235 @@ def run_im2col_gen(activations, weights, options):
 
     return lowered_act, lowered_weight
 
-def run_test(activations, weights, options):
+def run_comp_over_test(activations, weights, stride, padding, maxpool, relu_en, scale, options):
+    # GOO GOO GAH GAH mode
+    if options.baby_mode:
+        Hi = 3
+        Wi = 3
+        Ci = 3
+        activations = np.zeros((options.a_H, options.a_W, options.a_Ci))
+        N  = 3
+        Hf = 2
+        Wf = 2
+        weights = np.zeros((options.N, options.k_H, options.k_W, options.a_Ci))
+        for row in range(Wi):
+            activations[row] = activations[row] + row + 1
+        for kernel in range(N):
+            for row in range(Wf):
+                weights[kernel][row] = weights[kernel][row] + row + 1*kernel
+        stride = 1
+        padding = 0
+
     # DO THE IM2COL_GEN
     # lowered_weight now has shape [num_arrays, kernel_groups, tile_num, rows, cols, word_size]
-    lowered_act, lowered_weight = run_im2col_gen(activations, weights, options)
+    lowered_act, lowered_weight = run_im2col_gen(activations, weights, stride, padding, options)
+
+    # 1. GET THE GOLDEN NUMPY OFMAP FIRST
+    # Doing this first so we can use its shape to build our empty reconstructed matrix
+    correct_ofmap = do_cnn_layer(activations, weights, stride, padding)
+    correct_ofmap = pad_channels_to_word_size(correct_ofmap, word_size)
+    # make the matrices a multiple of our 2x4 systolic array output
+    correct_ofmap = pad_channels_to_word_size(correct_ofmap, 2, 0) # pad the rows
+    correct_ofmap = pad_channels_to_word_size(correct_ofmap, 4, 1) # pad the cols
+    
+    # Apply backend processing to the golden model
+    if relu_en: correct_ofmap = relu(correct_ofmap)
+    correct_ofmap = scale_clip_real(correct_ofmap, scale)
+    if maxpool: correct_ofmap = maxpool_real(correct_ofmap)
+
+    # if options.verbose:
+    #     print("ACTIVATIONS")
+    #     print_HWC(activations)
+    #     print("WEIGHTS")
+    #     print_HWC(weights[0])
+    #     print("NUMPY OFMAP")
+    #     print_HWC(correct_ofmap)
+        
+    # 2. PREP THE LOWERED MATRICES FOR MATMULT
+    num_kernel_groups = lowered_act.shape[0]
+    num_tiles = lowered_act.shape[1]
+    
+    # Flatten acts to (KG, Tiles, 8, L)
+    lowered_act_mats = lowered_act.reshape(num_kernel_groups, num_tiles, dim, -1)
+
+    # Transpose weights to (Arrays, KG, Tiles, L, word_size, dim) so we can flatten L and word_size
+    lowered_weight = np.transpose(lowered_weight, (0, 1, 2, 3, 5, 4))
+    # Flatten weights to (Arrays, KG, Tiles, L, 8)
+    lowered_weight_mats = lowered_weight.reshape(num_arrays, num_kernel_groups, num_tiles, -1, dim)
+
+    # 3. RECONSTRUCT THE HARDWARE OUTPUT
+    # Create an empty matrix identical to our expected golden output shape
+    reconstructed_ofmap = np.zeros_like(correct_ofmap)
+    
+    # We need the unpooled width to calculate tile X/Y coordinates accurately
+    unpooled_W = correct_ofmap.shape[1] * (2 if maxpool else 1)
+    tiles_in_width = math.ceil(unpooled_W / 4)
+
+    # Simulate all arrays!
+    Hi, Wi, Ci = activations.shape
+    Co, Hf, Wf, Ci = weights.shape
+    words_needed_for_Ci = math.ceil(Ci/word_size)
+    words_needed_for_Co = math.ceil(Co/word_size)
+
+    Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride, padding)
+
+    # Write the header to the stimuli file
+    comp_test_in = open('comp_over_test.in', 'a')
+    comp_test_out = open('comp_over_test.out', 'a')
+    comp_test_in.write(f'comp_Hi: {Hi:03x} comp_Wi: {Wi:03x} comp_Hf: {Hf:03x} comp_Wf: {Wf:03x} comp_Ho: {Ho:03x} comp_Wo: {Wo:03x} '
+                       f'comp_words_per_channel: {words_needed_for_Ci:03x} comp_num_kernels: {Co:03x} ' 
+                       f'comp_stride: {stride:02b} comp_padding: {padding:02b} comp_maxpool_en: {maxpool:01b} comp_relu_en: {relu_en:01b}\n')
+    
+    # Make an in code model of the output mem that we are creating so we can check our reconstruction
+    output_mem = np.empty((correct_ofmap.shape), dtype=np.int8)
+    output_mem = make_memory_model(output_mem, word_size)
+    num_out_writes = 0
+    num_out_writes_correct = output_mem.shape[0]
+
+    for kernel_group in range(num_kernel_groups):
+        for tile in range(num_tiles):
+            for array in range(num_arrays):
+                
+                # Core MatMult for this specific array, group, and tile
+                simulated = np.matmul(lowered_act_mats[kernel_group][tile], lowered_weight_mats[array][kernel_group][tile])
+
+                # Pass through backend
+                if relu_en: simulated = relu(simulated)
+                simulated = scale_clip_sim(simulated, scale)
+                if maxpool: simulated = maxpool_sim(simulated)
+                
+                # Format output dimensions based on maxpool
+                if maxpool:
+                    tile_out = simulated.reshape(1, 2, word_size)
+                    tile_h, tile_w = 1, 2
+                else:
+                    tile_out = simulated.reshape(2, 4, word_size)
+                    tile_h, tile_w = 2, 4
+                    
+                # Calculate spatial coordinates for reconstruction
+                tile_y = tile // tiles_in_width
+                tile_x = tile % tiles_in_width
+                
+                start_y = tile_y * tile_h
+                start_x = tile_x * tile_w
+                
+                # Calculate channel coordinates (8 channels per SA)
+                ch_start = (kernel_group * num_arrays * dim) + (array * dim)
+                ch_end = ch_start + dim
+
+                # Write out our systolic array tile
+                x = start_x
+                y = start_y
+                ch_word = ch_start
+                for sa_row in range(simulated.shape[0]):
+                    for data in range(word_size):
+                        comp_test_in.write(f'{simulated[sa_row][data].astype(np.uint8):02x}')
+                    
+                    # Also provide a destination address in the final memory model for testing purposes
+                    valid_ch = ch_word // 8 < words_needed_for_Co
+                    if valid_ch:
+                        dst_addr = (x + y*correct_ofmap.shape[1]) * words_needed_for_Co + ch_word//8
+                        output_mem[dst_addr] = simulated[sa_row]
+                        num_out_writes += 1
+                    else:
+                        dst_addr = 0
+
+                    comp_test_in.write(f' {x:03x} {y:03x} {ch_word:03x} {valid_ch:01b} {dst_addr:03x}')
+                    comp_test_in.write('\n')
+                    x += 1
+                    if(x % tile_w == 0):
+                        x = start_x
+                        y += 1
+                
+                # Safety check: if our output channel padding means we generated more channels 
+                # than the golden model technically holds, we slice it to fit.
+                if ch_start < reconstructed_ofmap.shape[2]:
+                    # Drop any excess padded channels for this tile if necessary
+                    valid_ch = min(dim, reconstructed_ofmap.shape[2] - ch_start)
+                    reconstructed_ofmap[start_y : start_y + tile_h, 
+                                        start_x : start_x + tile_w, 
+                                        ch_start : ch_start + valid_ch] = tile_out[:, :, :valid_ch]
+
+    # if options.verbose:
+    #     print("FULL RECONSTRUCTED SA OUTPUT")
+    #     print_HWC(reconstructed_ofmap)
+
+    if(num_out_writes != num_out_writes_correct):
+        print("HOUSTON WE HAVE A PROBLEM")
+
+    # 4. THE MOMENT OF TRUTH
+    if np.array_equal(reconstructed_ofmap, correct_ofmap):
+        # Write out the correct output matrix
+        golden_out = make_memory_model(reconstructed_ofmap, word_size)
+        x = 0
+        y = 0
+        ch_word = 0
+        for word in range(golden_out.shape[0]):
+            dst_addr = (x + y*correct_ofmap.shape[1]) * words_needed_for_Co + ch_word//8
+            for data in range(word_size):
+                comp_test_out.write(f'{golden_out[word][data].astype(np.int8):02x}')
+                if(output_mem[dst_addr][data] != golden_out[word][data]):
+                    print("ERROR: golden mismatch between output_mem and golden_out")
+                    print(f'dst_addr:{dst_addr} act:{output_mem[dst_addr]} exp:{golden_out[word]}')
+            comp_test_out.write(f' {x:03x} {y:03x} {ch_word:03x} {dst_addr:03x}')
+            comp_test_out.write('\n')
+            ch_word += 8
+            if(ch_word == words_needed_for_Co*dim):
+                ch_word = 0
+                x += 1
+                if(x == correct_ofmap.shape[1]):
+                    x = 0
+                    y += 1
+        # print(output_mem)
+        print("\n========================================================")
+        print("SUCCESS! ALL TILES AND ARRAYS MATCH THE GOLDEN MATMULT!")
+        print("YOU ARE THE GREATEST PYTHON PROGRAMMER IN THE WORLD.")
+        print("========================================================\n")
+    else:
+        print("\nERROR: OOPSIES, FULL MATRIX DOES NOT MATCH!!!!!!")
+        # Bonus: Find exactly where it failed to aid debugging
+        diff = reconstructed_ofmap != correct_ofmap
+        mismatch_indices = np.argwhere(diff)
+        print(f"Total mismatches: {len(mismatch_indices)}")
+        if len(mismatch_indices) > 0:
+            first_bad = mismatch_indices[0]
+            print(f"First mismatch at (Y, X, C) = {first_bad}")
+            print(f"Hardware got: {reconstructed_ofmap[tuple(first_bad)]}")
+            print(f"Golden expected: {correct_ofmap[tuple(first_bad)]}")
+    comp_test_in.close()
+    comp_test_out.close()
+
+def run_test(activations, weights, stride, padding, options):
+    # GOO GOO GAH GAH
+    if options.baby_mode:
+        Hi = 3
+        Wi = 3
+        Ci = 3
+        activations = np.zeros((options.a_H, options.a_W, options.a_Ci))
+        N  = 3
+        Hf = 2
+        Wf = 2
+        weights = np.zeros((options.N, options.k_H, options.k_W, options.a_Ci))
+        for row in range(Wi):
+            activations[row] = activations[row] + row + 1
+        for kernel in range(N):
+            for row in range(Wf):
+                weights[kernel][row] = weights[kernel][row] + row + 1*kernel
+        stride = 1
+        padding = 0
+
+    # DO THE IM2COL_GEN
+    # lowered_weight now has shape [num_arrays, kernel_groups, tile_num, rows, cols, word_size]
+    lowered_act, lowered_weight = run_im2col_gen(activations, weights, stride, padding, options)
     
     # this part had a bit of gemini help to speed up its development, thanks gemini
     if not options.debug:
+        print(f'Maxpool: {options.maxpool}')
+        print(f'Relu: {options.relu}')
+        print(f'Scale: {options.scale}')
         # 1. GET THE GOLDEN NUMPY OFMAP FIRST
         # Doing this first so we can use its shape to build our empty reconstructed matrix
-        correct_ofmap = do_cnn_layer(activations, weights, options.stride, options.padding)
+        correct_ofmap = do_cnn_layer(activations, weights, stride, padding)
         correct_ofmap = pad_channels_to_word_size(correct_ofmap, word_size)
         # make the matrices a multiple of our 2x4 systolic array output
         correct_ofmap = pad_channels_to_word_size(correct_ofmap, 2, 0) # pad the rows
@@ -392,167 +619,147 @@ def run_test(activations, weights, options):
                 print(f"Hardware got: {reconstructed_ofmap[tuple(first_bad)]}")
                 print(f"Golden expected: {correct_ofmap[tuple(first_bad)]}")
 
-def run_im2col_test(activations, weights, options):
-    run_im2col_gen(activations, weights, options)
+def run_im2col_test(activations, weights, stride, padding, options):
+    # GOO GOO GAH GAH
+    if options.baby_mode:
+        Hi = 3
+        Wi = 3
+        Ci = 3
+        activations = np.zeros((options.a_H, options.a_W, options.a_Ci))
+        N  = 3
+        Hf = 2
+        Wf = 2
+        weights = np.zeros((options.N, options.k_H, options.k_W, options.a_Ci))
+        for row in range(Wi):
+            activations[row] = activations[row] + row + 1
+        for kernel in range(N):
+            for row in range(Wf):
+                weights[kernel][row] = weights[kernel][row] + row + 1*kernel
+        stride = 1
+        padding = 0
 
-def relu(mat):
-    """Element-wise ReLU."""
-    return np.maximum(mat, 0)
+    run_im2col_gen(activations, weights, stride, padding, options)
 
-def scale_clip_sim(mat, shift, out_bits=8):
-    """Arithmetic right shift then clip to signed out_bits range."""
-    upper = (1 << (out_bits - 1)) - 1   # 127
-    lower = -(1 << (out_bits - 1))      # -128
-    result = np.zeros_like(mat)
-    for i in range(mat.shape[0]):
-        for j in range(mat.shape[1]):
-            shifted = int(mat[i][j]) >> shift
-            result[i][j] = max(lower, min(upper, shifted))
-    return result
+def random_input_gen():
     
-def scale_clip_real(mat, shift, out_bits=8):
-    """Arithmetic right shift then clip to signed out_bits range."""
-    upper = (1 << (out_bits - 1)) - 1   # 127
-    lower = -(1 << (out_bits - 1))      # -128
-    result = np.zeros_like(mat)
-    for i in range(mat.shape[0]):
-        for j in range(mat.shape[1]):
-            for k in range(mat.shape[2]):
-                shifted = int(mat[i][j][k]) >> shift
-                result[i][j][k] = max(lower, min(upper, shifted))
-    return result
+    test_not_valid = 1
+    while(test_not_valid):
+        # Get our dimensions
+        Hi = random.randint(4, 256)
+        Wi = random.randint(4, 256)
+        Hf = random.randint(1, Hi//2 + 1)
+        Wf = random.randint(1, Wi//2 + 1)
+        Ci  = random.randint(1, 256)
+        Co  = random.randint(1, 256)
+        stride = random.randint(1, 2)
+        padding = random.randint(0, 3)
 
-def maxpool_sim(mat):
-    drain_order = mat[::-1, :]  # reversed row order
-    buf0 = mat[:dim//2, :]
-    buf1 = mat[dim//2:, :]
-    n_out = dim // 4
-    golden_out = np.zeros((n_out, dim), dtype=np.int32)
-    for i in range(n_out):
-        for ch in range(dim):
-            p0 = buf0[2*i,   ch]
-            p1 = buf0[2*i+1, ch]
-            p2 = buf1[2*i,   ch]
-            p3 = buf1[2*i+1, ch]
-            golden_out[i, ch] = max(p0, p1, p2, p3)
-    return golden_out
+        test_not_valid = dim_check_fast(Hi, Wi, Ci, Co, Hf, Wf, stride, padding)
 
-def maxpool_real(mat):
-    H = mat.shape[0]//2
-    W = mat.shape[1]//2
-    C = mat.shape[2]
-    output = np.zeros((H, W, C), dtype=np.int32)
-    for row in range(H):
-        for col in range(W):
-            for ch in range(C):
-                p0 = mat[2*row,   2*col,   ch]
-                p1 = mat[2*row,   2*col+1, ch]
-                p2 = mat[2*row+1, 2*col,   ch]
-                p3 = mat[2*row+1, 2*col+1, ch]
-                output[row, col, ch] = max(p0, p1, p2, p3)
-    return output
+    bound = random.randint(1, 512)
+    activations = np.random.randint(0-bound, bound, (Hi, Wi, Ci), dtype=np.int32)
+    weights = np.random.randint(0-bound, bound, (Co, Hf, Wf, Ci), dtype=np.int32)
+    return activations, weights, stride, padding
 
-
-def run_sa(lowered_act, lowered_weight):
-    num_tiles = lowered_act.shape[0]
-    kernel_groups = lowered_act.shape[1]
-    frontend = systolic_array_frontend(dim, 16)
-    backend = systolic_array_backend(dim, bit_size)
-    for tile in range(num_tiles):
-        for kernel_group in range(kernel_groups):
-            print(f'\n================ TILE {tile} KERNEL GROUP {kernel_group}================')
-
-            # 1. Fetch and cleanly flatten current tile data
-            act_tile = lowered_act[tile][kernel_group]       # Shape: (8, 4, 8) = (row, word, element)
-            weight_tile = lowered_weight[tile][kernel_group]  # Shape: (4, 8, 8) = (word, kernel, element)
-
-            # act_tile flattens cleanly into (8, 32)
-            act_flat = act_tile.reshape(act_tile.shape[0], -1) 
-            
-            # weight_tile MUST be transposed to (word, element, kernel) before flattening
-            # so that the 8 kernels act as our 8 columns across the 32 time steps.
-            weight_flat = weight_tile.transpose(0, 2, 1).reshape(-1, dim)
-
-            # 2. Calculate Golden MatMult
-            golden_output = np.matmul(act_flat, weight_flat) # (8, 32) x (32, 8) = (8, 8)
-
-            # 3. Reset Hardware for the new tile
-            frontend.reset()
-            backend.reset()
-
-            # Trackers for our hardware simulation
-            output_idx = 0
-            hw_output = np.zeros((dim, dim))
-            
-            # The common dimension K is the number of cycles it takes to push all data in
-            # For shape (8, 32), K is 32.
-            K = act_flat.shape[1] 
-            
-            data_write = 0
-            for data_col in range(lowered_act.shape[3]):
-                for data_row in range(lowered_act.shape[2]):
-                    # --- A. Feed the Frontend ---
-                    left_input = lowered_act[tile][kernel_group] [data_row][data_col]
-                    top_input = lowered_weight[tile][kernel_group] [data_col][data_row]
-                    data_info = [True] if (data_col == lowered_act.shape[3]-1) and (data_row == lowered_act.shape[2]-1) else [False] 
-                    data_write += 1
-                    frontend.write_fifos(left_input, top_input, data_info)
-                        
-                    # --- B. Tick the Frontend ---
-                    fe_data, fe_valid = frontend.step()
-
-
-                egress_cycles = 100 # Generous timeout limit
-                cycle = 0
-                while(cycle < egress_cycles):
-                    fe_data, fe_valid = frontend.step()
-                    backend.step(fe_data, fe_valid)
-                    if not backend.output_fifo_empty():
-                        # In your frontend make_test, you reversed the output index. 
-                        # We do the same here to match the systolic array's output geometry.
-                        hw_output[dim - 1 - output_idx] = backend.read_output_fifo()
-                        output_idx += 1
-                    cycle += 1
-
-            # 4. Compare Results
-            print("\nGolden Output:")
-            print(golden_output)
-            print("\nHardware Output:")
-            print(hw_output)
-
-            if output_idx < dim:
-                print(f"TILE {tile} TIMEOUT: Hardware only produced {output_idx}/{dim} rows.")
-            elif np.array_equal(golden_output, hw_output):
-                print(f"TILE {tile} MATCHED!")
-            else:
-                print(f"TILE {tile} MISMATCH!")
+def random_input_gen_all():
     
+    test_not_valid = 1
+    while(test_not_valid):
+        # Get our dimensions
+        Hi = random.randint(4, 256)
+        Wi = random.randint(4, 256)
+        Hf = random.randint(1, Hi//2 + 1)
+        Wf = random.randint(1, Wi//2 + 1)
+        Ci  = random.randint(1, 256)
+        Co  = random.randint(1, 256)
+        stride = random.randint(1, 2)
+        padding = random.randint(0, 3)
+        maxpool = random.randint(0, 1)
+        relu = random.randint(0, 1)
+        scale = random.randint(0, 31)
+
+        test_not_valid = dim_check_fast(Hi, Wi, Ci, Co, Hf, Wf, stride, padding, maxpool)
+
+    bound = random.randint(1, 512)
+    activations = np.random.randint(0-bound, bound, (Hi, Wi, Ci), dtype=np.int32)
+    weights = np.random.randint(0-bound, bound, (Co, Hf, Wf, Ci), dtype=np.int32)
+    return activations, weights, stride, padding, maxpool, relu, scale
+
+def print_info(activations, weights, stride, padding, maxpool, relu, scale):
+    # Determine how much space our inputs, weights, and outputs take up
+    Hi, Wi, Ci = activations.shape
+    Co, Hf, Wf, Ci = weights.shape
+    Wo, Ho = calc_output_dim(Wi, Hi, Wf, Hf, stride, padding)
+    print(f'Input shape: Hi: {Hi} Wi: {Wi} Ci: {Ci}')
+    print(f'Kernel shape: Hf: {Hf} Wf: {Wf} Ci: {Ci} Co: {Co}')
+    print(f'Output shape real: Ho: {Ho} Wo: {Wo} Co: {Co}')
+    pad = 4 - (Wo % 4)
+    Wo += pad
+    pad = 4 - (Wo % 4)
+    Ho += pad
+    if(maxpool):
+        Wo = Wo//2
+        Ho = Ho//2
+    words_needed_for_Ci = math.ceil(Ci/word_size)
+    num_words_for_output_channels = math.ceil(Co/word_size)
+    activation_size = Hi * Wi * words_needed_for_Ci * word_size
+    kernel_size_single =  Hf * Wf * words_needed_for_Ci * word_size
+    num_rows_per_kernel = Hf * Wf * words_needed_for_Ci
+    kernels_size = kernel_size_single * Co # We can operate on 8 kernels at a time
+    output_size = Wo * Ho * num_words_for_output_channels * word_size
+
+
+    print(f'Stride: {stride} Padding: {padding}')
+    print(f"words needed for channels: {words_needed_for_Ci} ")
+
+    print(f'main mem size for inputs/outputs: {main_mem_size//1024} kB')
+    print(f'weight mem size for weights: {weight_mem_size//1024} kB')
+    print(f'weight mem size for weights total: {8*weight_mem_size//1024} kB')
+
+    print(f"activation size: {activation_size//1024} kB")
+    print(f"kernels size: {kernels_size//1024} kB")
+    print(f"output size: {output_size//1024} kB")
+
+    print(f'Maxpool: {maxpool}')
+    print(f'Relu: {relu}')
+    print(f'Scale: {scale}')
+
 def main(options):
     np.random.seed(42)
-    # Make some HWC matrices
-    if options.test_im2col:
+    random.seed(10)
+    
+    if options.im2col_test:
+        # Testing for im2col_gen
+        im2col_test_file = open('im2col_test.txt', 'w')
+        im2col_test_file.close()
         for test in range(options.num_tests):
-
-            run_im2col_test()
+            activations, weights, stride, padding = random_input_gen()
+            print(f'Test #{test}')
+            print_info(activations, weights, stride, padding, 0, 0, 0)
+            run_im2col_test(activations, weights, stride, padding, options)
+    elif(options.comp_over_test):
+        # Testing for comp_overseer
+            comp_test_in = open('comp_over_test.in', 'w')
+            comp_test_out = open('comp_over_test.out', 'w')
+            comp_test_in.close()
+            comp_test_out.close()
+            for test in range(options.num_tests):
+                activations, weights, stride, padding, maxpool, relu, scale = random_input_gen_all()
+                print(f'Test #{test}')
+                print_info(activations, weights, stride, padding, maxpool, relu, scale)
+                comp_test_in = open('comp_over_test.in', 'a')
+                comp_test_out = open('comp_over_test.out', 'a')
+                comp_test_in.write(f'test: {test:02x} ')
+                comp_test_out.write(f'test: {test:02x} x y ch_start addr\n')
+                comp_test_in.close()
+                comp_test_out.close()
+                run_comp_over_test(activations, weights, stride, padding, maxpool, relu, scale, options)
     else:
-        if options.baby_mode:
-            Hi = 3
-            Wi = 3
-            Ci = 3
-            activations = np.zeros((options.a_H, options.a_W, options.a_Ci))
-            N  = 3
-            Hf = 2
-            Wf = 2
-            weights = np.zeros((options.N, options.k_H, options.k_W, options.a_Ci))
-            for row in range(Wi):
-                activations[row] = activations[row] + row + 1
-            for kernel in range(N):
-                for row in range(Wf):
-                    weights[kernel][row] = weights[kernel][row] + row + 1*kernel
-        else:
-            activations = np.random.randint(-4, 4, (options.a_H, options.a_W, options.a_Ci), dtype=np.int32)
-            weights = np.random.randint(-4, 4, (options.N, options.k_H, options.k_W, options.a_Ci), dtype=np.int32)
-        run_test(activations, weights, options)
+        # Make some HWC matrices
+        activations = np.random.randint(-4, 4, (options.a_H, options.a_W, options.a_Ci), dtype=np.int32)
+        weights = np.random.randint(-4, 4, (options.N, options.k_H, options.k_W, options.a_Ci), dtype=np.int32)
+        run_test(activations, weights, options.stride, options.padding, options)
+        #run_comp_over_test(activations, weights, options.stride, options.padding, options.maxpool, options.relu, options.scale, options)
 
 if __name__ == "__main__":
 
@@ -579,7 +786,8 @@ if __name__ == "__main__":
     parser.add_argument('-skip_sa', '--skip_sa', action='store_true')
     parser.add_argument('-dump_dir', '--dump_dir', type=str, default='.')
     parser.add_argument('-im2col_test', '--im2col_test', action='store_true')
-    parser.add_argument('-num_tests', '--num_tests', type=int, default=10)
+    parser.add_argument('-num_tests', '--num_tests', type=int, default=1)
+    parser.add_argument('-comp_over_test', '--comp_over_test', action='store_true')
     # parser.add_argument('-main_depth', '--main_mem_depth', type=int, default=4096) 
     # parser.add_argument('-weight_depth', '--weight_mem_depth', type=int, default=2048) 
 

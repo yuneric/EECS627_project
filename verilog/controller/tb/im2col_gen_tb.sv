@@ -71,6 +71,7 @@ module im2col_gen_tb;
 
     integer stim_fd, out_fd;
     integer total, correct_total;
+    integer line_num, num_errs;
 
     
     initial begin
@@ -87,12 +88,15 @@ module im2col_gen_tb;
         rst_n        = 1;
         fifo_full    = 0;
         im2col_start = 0;
+        line_num = 0;
+        num_errs = 0;
         @(negedge clk);
         rst_n = 0;
 
         while(!$feof(stim_fd)) begin
             // Read the tile header
             total = 0;
+            line_num = line_num + 1;
             $fscanf(stim_fd, "cfg_tile_H: %h cfg_tile_W: %h cfg_Hf: %h cfg_Wf: %h cfg_stride: %b cfg_padding: %b cfg_words_ci: %h cfg_curr_kernel_group: %h cfg_num_kernels_per_group: %h cfg_sub_tile_x: %h cfg_sub_tile_y: %h cfg_x_bound: %b cfg_y_bound: %b total: %d\n",
                              cfg_tile_H,
                              cfg_tile_W,
@@ -138,18 +142,23 @@ module im2col_gen_tb;
                 $display("actual: %d expected: %d", total, correct_total);
             end
         end
+        $display("NUM_ERRS: %d", num_errs);
+        if(num_errs == 0) begin
+            $display("Passed!!!!!!!");
+        end
         $finish;
     end
 
-    logic [MEM_IF_ADDR_WIDTH-1:0]                  correct_act_addr ;
+    logic [MEM_IF_ADDR_WIDTH-1:0] correct_act_addr ;
     logic                         correct_act_valid;
-    logic [11:0]                  correct_wt_addr  ;
+    logic [MEM_IF_ADDR_WIDTH-1:0] correct_wt_addr  ;
     logic [NUM_ARRAYS-1:0]        correct_wt_valid ;
     logic                         correct_im2col_done;
 
     always @(posedge clk) begin
         if(push_en) begin
             total = total + 1;
+            line_num = line_num + 1;
             $fscanf(stim_fd, "%h %b %h %b %b\n",
                              correct_act_addr,
                              correct_act_valid,
@@ -157,25 +166,30 @@ module im2col_gen_tb;
                              correct_wt_valid,
                              correct_im2col_done
                             );
-            if(act_addr != correct_act_addr) begin
-                $display("ERROR: Incorrect act addr @output # %d", total);
-                $display("actual: %d expected: %d", act_addr, correct_act_addr);
-            end
             if(act_valid != correct_act_valid) begin
-                $display("ERROR: Incorrect act valid @output # %d", total);
-                $display("actual: %d expected: %d", act_valid, correct_act_valid);
-            end
-            if(wt_addr != correct_wt_addr[DIM_WIDTH-1:0]) begin
-                $display("ERROR: Incorrect wt addr @output # %d", total);
-                $display("actual: %d expected: %d", wt_addr, correct_wt_addr);
+                $display("ERROR: Incorrect act valid @output # %d", line_num);
+                $display("actual: %h expected: %h", act_valid, correct_act_valid);
+                num_errs += 1;
+            end 
+            if((act_valid == 1) && (correct_act_valid == 1) && (act_addr != correct_act_addr)) begin
+                $display("ERROR: Incorrect act addr @output # %d", line_num);
+                $display("actual: %h expected: %h", act_addr, correct_act_addr);
+                num_errs += 1;
             end
             if(wt_valid != correct_wt_valid) begin
-                $display("ERROR: Incorrect wt valid @output # %d", total);
-                $display("actual: %d expected: %d", wt_valid, correct_wt_valid);
+                $display("ERROR: Incorrect wt valid @output # %d", line_num);
+                $display("actual: %h expected: %h", wt_valid, correct_wt_valid);
+                num_errs += 1;
+            end 
+            if((wt_valid == 1) && (correct_wt_valid == 1) && (wt_addr != correct_wt_addr[WT_ADDR_WIDTH-1:0])) begin
+                $display("ERROR: Incorrect wt addr @output # %d", line_num);
+                $display("actual: %h expected: %h", wt_addr, correct_wt_addr);
+                num_errs += 1;
             end
             if(im2col_done != correct_im2col_done) begin
-                $display("ERROR: Incorrect done assertion @output # %d", total);
-                $display("actual: %d expected: %d", im2col_done, correct_im2col_done);
+                $display("ERROR: Incorrect done assertion @output # %d", line_num);
+                $display("actual: %h expected: %h", im2col_done, correct_im2col_done);
+                num_errs += 1;
             end 
             $fwrite(out_fd, "%h %b %h %b %b\n",
                              act_addr,
@@ -187,6 +201,6 @@ module im2col_gen_tb;
         end
     end
 
-    initial begin #10000000; $display("TIMEOUT"); $finish; end
+    initial begin #30000000; $display("TIMEOUT"); $finish; end
 
 endmodule

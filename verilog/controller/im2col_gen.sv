@@ -166,7 +166,6 @@ module im2col_gen #(
 
     // top_left_input_pixel_x = top_left_output_pixel_x * stride
     // top_left_input_pixel_y = top_left_output_pixel_y * stride
-
     assign in_px_s = $signed({{2{1'b0}}, abs_out_x}) * $signed({{DIM_WIDTH+4-DIM_WIDTH{1'b0}}, cfg_stride})
                    + $signed({{DIM_WIDTH+4-DIM_WIDTH{1'b0}}, wgt_pix_x})
                    - $signed({{DIM_WIDTH+4-DIM_WIDTH{1'b0}}, cfg_padding});
@@ -213,7 +212,7 @@ module im2col_gen #(
     // weight_mem_address = ((weight_pixel_x + weight_pixel_y*Wf) * words_needed_for_Ci) + word_idx + (kernel_num * num_rows_per_kernel)
 
     assign kernel_size = cfg_Hf * cfg_Wf * cfg_words_ci;
-    // Base of the 8 kernels for this kernel
+    // Base of the 8 kernels for this array
     assign kernel_base_addr  =  DIM * kernel_size * cfg_curr_kernel_group;
     // Which kernel we are picking from the 8
     assign kernel_offset     = sa_row_idx * kernel_size;

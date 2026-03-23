@@ -6,6 +6,7 @@ module sa_slice #(
     parameter OUTPUT_WIDTH  = 8,
     parameter SHIFT_WIDTH   = 5,
     parameter FIFO_DEPTH    = 16,
+    parameter OUTPUT_FIFO_DEPTH = 8, 
     parameter WT_ADDR_WIDTH  = 11
 )(
     input  logic                                   i_clk_sys,   // system-side clock (FIFO write / controller domain)
@@ -37,10 +38,12 @@ module sa_slice #(
     // Output Fifo
     output logic [ARRAY_SIZE*OUTPUT_WIDTH-1:0]     o_pop_data,
     input  logic                                   i_pop_en,
-    output logic                                   o_pop_empty
+    output logic                                   o_pop_empty, 
+    output logic                                   o_rd_almost_empty,
+    output logic                                   o_rd_full
+
 );
-    logic weight_sram_cen_n;
-    logic weight_sram_wen_n;
+
 
     logic [DATA_WIDTH*ARRAY_SIZE-1:0] act_fifo_rdata;
     logic [DATA_WIDTH*ARRAY_SIZE-1:0] weight_fifo_rdata;
@@ -281,7 +284,7 @@ module sa_slice #(
     // OUTPUT FIFO
     async_fifo #(
         .WIDTH(DATA_WIDTH * ARRAY_SIZE),
-        .DEPTH(FIFO_DEPTH)
+        .DEPTH(OUTPUT_FIFO_DEPTH)
     ) u_output_fifo (
         .i_wr_clk         (i_clk_sa),
         .i_wr_rst_n       (i_rst_n),
@@ -298,10 +301,10 @@ module sa_slice #(
         .o_rd_data        (o_pop_data),
         .i_rd_en          (i_pop_en),
         .o_rd_empty       (o_pop_empty),
-        .o_rd_almost_empty(),
+        .o_rd_almost_empty(o_rd_almost_empty),
         .o_rd_half_full   (),
         .o_rd_almost_full (),
-        .o_rd_full        ()
+        .o_rd_full        (o_rd_full)
     );
 
     

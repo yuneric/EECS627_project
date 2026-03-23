@@ -6,6 +6,7 @@ module mmu_tb;
     //this is the word size -> output into on-chip srams.
     parameter WORD_SIZE       = 64;
 
+    parameter ACT_AW          = 12;
     //the write address
     parameter WT_AW           = 11;
 
@@ -58,10 +59,10 @@ module mmu_tb;
     logic                   o_wgt_wen;
     logic [WORD_SIZE-1:0]   o_wgt_wdata;
     logic [2:0]             o_wgt_sram_sel;
-    logic [ADDR_WIDTH-1:0]  o_act_waddr;
+    logic [ACT_AW-1:0]  o_act_waddr;
     logic                   o_act_wen;
     logic [WORD_SIZE-1:0]   o_act_wdata;
-    logic [ADDR_WIDTH-1:0]  o_act_raddr;
+    logic [ACT_AW-1:0]      o_act_raddr;
     logic                  o_act_ren;
     logic [WORD_SIZE-1:0]  i_act_rdata;
     logic [ADDR_WIDTH-1:0] o_npu_araddr;
@@ -132,9 +133,11 @@ module mmu_tb;
     `endif
 
     mmu #(
-        .ADDR_WIDTH(ADDR_WIDTH),
-        .DATA_WIDTH(DATA_WIDTH),
-        .WORD_SIZE(WORD_SIZE) //is 64 bits
+        .CPU_ADDR_WIDTH(ADDR_WIDTH), 
+        .CPU_DATA_WIDTH(DATA_WIDTH),
+        .NPU_ACT_ADDR_WIDTH(ACT_AW),
+        .NPU_WT_ADDR_WIDTH(WT_AW),
+        .NPU_DATA_WIDTH(WT_DW)
     ) mmu_dut (
         .i_clk(clk),
         .i_rst_n(rst_n),

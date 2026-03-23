@@ -11,6 +11,7 @@ module controller_integration_tb;
     parameter MMIO_ADDR       = 32'h2000_0000; //MMIO ADDR
     parameter MMIO_SIZE       = 32'h0000_0100; //MNIO SIZE
     parameter WORD_SIZE       = 64; //WORD SIZE of ON CHIP SRAMS
+    parameter ACT_AW          = 12;
     parameter WT_AW           = 11; //WGT SRAMs ADDR WIDTH
     parameter WT_BANKS        = 8; //THE NUMBER OF WEIGHT BANKS
     parameter WT_DW           = 64; //THE WIDTH OF DATA THAT goes to weight srams.
@@ -27,7 +28,7 @@ module controller_integration_tb;
     //clk stuff
     logic clk   = 1;
     logic rst_n = 0;
-    always #5 clk = ~clk; 
+    always #2.5 clk = ~clk; 
 
     //define memory 
     reg [31:0] memory [0:MEM_WORDS-1];
@@ -82,11 +83,11 @@ module controller_integration_tb;
     logic                  mmu_done, bank_sel;
 
     // MMU to SRAMs
-    logic [10:0]           wgt_addr;
+    logic [WT_AW-1:0]           wgt_addr;
     logic                  wgt_wen;
     logic [WORD_SIZE-1:0]  wgt_wdata;
     logic [2:0]            wgt_sram_sel;
-    logic [ADDR_WIDTH-1:0] act_waddr, act_raddr;
+    logic [ACT_AW-1:0] act_waddr, act_raddr;
     logic                  act_wen, act_ren;
     logic [WORD_SIZE-1:0]  act_wdata, act_rdata;
 
@@ -109,9 +110,19 @@ module controller_integration_tb;
     logic [DATA_WIDTH-1:0] mem_rdata;
 
     `ifdef SYN
-        initial begin
-            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", proc);
-        end
+    initial begin
+        $display("[%0t] Applying SDF", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", proc);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/controller/controller.syn.sdf", controller_dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmu/mmu.syn.sdf", mmu_dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", arbiter_inst);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/address_decoder/address_decoder.syn.sdf", addr_dec_dut);
+        $display("[%0t] SDF annotation call finished", $time);
+    end
+    `else
+    initial begin
+        $display("[%0t] SYN not defined, no SDF annotation", $time);
+    end
     `endif
     
     //instantiations
@@ -136,11 +147,6 @@ module controller_integration_tb;
         .o_mmio_wstrb(mmio_wstrb), .i_mmio_ready(mmio_ready), .i_mmio_rdata(mmio_rdata)
     );
 
-    `ifdef SYN
-    initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/controller/controller.syn.sdf", controller_dut);
-    end
-    `endif
     
     controller #(
         .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .DIM_WIDTH(DIM_WIDTH)
@@ -168,7 +174,11 @@ module controller_integration_tb;
     );
 
     mmu #(
-        .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .WORD_SIZE(WORD_SIZE)
+        .CPU_ADDR_WIDTH(ADDR_WIDTH), 
+        .CPU_DATA_WIDTH(DATA_WIDTH),
+        .NPU_ACT_ADDR_WIDTH(ACT_AW),
+        .NPU_WT_ADDR_WIDTH(WT_AW),
+        .NPU_DATA_WIDTH(WT_DW)
     ) mmu_dut (
         .i_clk(clk), .i_rst_n(rst_n),
         .i_load_weights(mmu_load_weights), .i_load_tile(mmu_load_tile), .i_store_tile(mmu_store_tile),
@@ -618,16 +628,16 @@ module controller_integration_tb;
         output logic [63:0] data_out //the data we want to read from.
     );
         begin
-            @(negedge clk);
+            @(posedge clk);
             //setting up signals for read
-            wt_mem_rd_addr = '0;
-            wt_mem_rd_en   = '0;
-            wt_mem_rd_addr[bank*WT_AW +: WT_AW] = addr[WT_AW-1:0];
-            wt_mem_rd_en[bank] = 1'b1;
-
+            wt_mem_rd_addr <= '0;
+            wt_mem_rd_en   <= '0; 
+            @(posedge clk);
+            wt_mem_rd_addr[bank*WT_AW +: WT_AW] <= addr[WT_AW-1:0];
+            wt_mem_rd_en[bank] <= 1'b1;
+            @(posedge clk);
             //data out - read data
             @(posedge clk);
-            @(negedge clk);
             data_out = wt_mem_rd_data[bank*WT_DW +: WT_DW];
             wt_mem_rd_en = '0;
         end

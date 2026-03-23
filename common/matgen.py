@@ -1,6 +1,18 @@
 import numpy as np
 from scipy import signal
 
+# Global constants
+dim = 8
+num_arrays = 8
+#num_arrays = 8
+word_size = 8
+bit_size = 8
+main_mem_depth = 4096 #32kB each
+#main mem depth by word size
+main_mem_size = main_mem_depth * word_size
+weight_mem_depth = 2048 #16kB each
+weight_mem_size = weight_mem_depth * word_size
+
 def int8_to_hex(val):
     return f"{val.view(dtype=np.uint8):02X}"
 
@@ -91,7 +103,9 @@ def do_cnn_layer(ifmap, kernels, stride=1, padding=0):
     # Technically we want "correlation" because "convolution" actually flips the matrix 180
     padded_ifmap = np.pad(ifmap, ((padding, padding), (padding, padding), (0, 0)))
     #print_HWC(padded_ifmap)
+    #print(ifmap.shape[1], ifmap.shape[0], kernels.shape[2], kernels.shape[1], stride, padding)
     Wo, Ho = calc_output_dim(ifmap.shape[1], ifmap.shape[0], kernels.shape[2], kernels.shape[1], stride, padding)
+    #print(Wo, Ho)
     ofmap = np.empty((Ho, Wo, kernels.shape[0]), dtype=np.int32)
     # print(Wo, Ho)
     for kernel in range(kernels.shape[0]):
@@ -108,6 +122,65 @@ def do_convolution(ifmap, kernel, stride=1):
     result = result[::stride, ::stride]
     # print(result)
     return result
+
+
+def relu(mat):
+    """Element-wise ReLU."""
+    return np.maximum(mat, 0)
+
+def scale_clip_sim(mat, shift, out_bits=8):
+    """Arithmetic right shift then clip to signed out_bits range."""
+    upper = (1 << (out_bits - 1)) - 1   # 127
+    lower = -(1 << (out_bits - 1))      # -128
+    result = np.zeros_like(mat)
+    for i in range(mat.shape[0]):
+        for j in range(mat.shape[1]):
+            shifted = int(mat[i][j]) >> shift
+            result[i][j] = max(lower, min(upper, shifted))
+    return result
+    
+def scale_clip_real(mat, shift, out_bits=8):
+    """Arithmetic right shift then clip to signed out_bits range."""
+    upper = (1 << (out_bits - 1)) - 1   # 127
+    lower = -(1 << (out_bits - 1))      # -128
+    result = np.zeros_like(mat)
+    for i in range(mat.shape[0]):
+        for j in range(mat.shape[1]):
+            for k in range(mat.shape[2]):
+                shifted = int(mat[i][j][k]) >> shift
+                result[i][j][k] = max(lower, min(upper, shifted))
+    return result
+
+def maxpool_sim(mat):
+    drain_order = mat[::-1, :]  # reversed row order
+    buf0 = mat[:dim//2, :]
+    buf1 = mat[dim//2:, :]
+    n_out = dim // 4
+    golden_out = np.zeros((n_out, dim), dtype=np.int32)
+    for i in range(n_out):
+        for ch in range(dim):
+            p0 = buf0[2*i,   ch]
+            p1 = buf0[2*i+1, ch]
+            p2 = buf1[2*i,   ch]
+            p3 = buf1[2*i+1, ch]
+            golden_out[i, ch] = max(p0, p1, p2, p3)
+    return golden_out
+
+def maxpool_real(mat):
+    H = mat.shape[0]//2
+    W = mat.shape[1]//2
+    C = mat.shape[2]
+    output = np.zeros((H, W, C), dtype=np.int32)
+    for row in range(H):
+        for col in range(W):
+            for ch in range(C):
+                p0 = mat[2*row,   2*col,   ch]
+                p1 = mat[2*row,   2*col+1, ch]
+                p2 = mat[2*row+1, 2*col,   ch]
+                p3 = mat[2*row+1, 2*col+1, ch]
+                output[row, col, ch] = max(p0, p1, p2, p3)
+    return output
+
 
 ###############################################################
 # Everything below this is pretty much only used in im2col.py #

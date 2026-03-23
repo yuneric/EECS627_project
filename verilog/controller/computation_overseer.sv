@@ -25,7 +25,7 @@ module computation_overseer #(
     input logic [DIM_WIDTH-1:0]  i_comp_Wo               , //output width
     input logic [DIM_WIDTH-1:0]  i_comp_words_per_channel, //the number of words taken up for all the channels of a single pixel
     input logic [DIM_WIDTH-1:0]  i_comp_num_kernels      , //the number of kernels - from user via mmio
-    output                       o_comp_done             , //sending the controller that the computation is done - handshake that helps trigger next set of data/signals
+    output                       o_comp_done             , //sending the controller that the computation is done - handshake that helps trigger next set of data/signals - so when finished calculating all the kernel groupss
 
     //we have to send rd_addr and rd_en to mem_if and activation data is sent to the systolic array units
     output  [MEM_IF_ADDR_WIDTH-1:0] o_comp_waddr, //write the drain data to mem_if
@@ -48,8 +48,7 @@ module computation_overseer #(
 
     // Input Fifo
     //TODO: need to ask about these signals -> probably have to interface with im2col_gen don't worry about this.
-    output  logic [DIM-1:0] o_push_data_last,
-    output  logic [DIM-1:0] o_push_en,
+    output  logic o_push_en,
     input logic [DIM-1:0] i_push_fifo_full, //we need to get stuff from of our slices
 
     // Local weight SRAM ports - should get wt_sram_rd addr and en from im2col
@@ -100,6 +99,7 @@ module computation_overseer #(
             curr_drain_waddr_q <= '0;
             drain_wdata <= '0;
         end else begin
+            //accounts for the cycle latency.
             drain_wen_q <= drain_wen;
             curr_drain_waddr_q <= curr_drain_waddr;
             if (drain_wen_q) begin
@@ -165,31 +165,6 @@ module computation_overseer #(
     //we want to set it up in 
 
     //when send advance, you allow next weight address to be calculated.
-
-
-    wire ic_start, ic_advance;
-    wire [MEM_IF_ADDR_WIDTH-1:0] ic_act_addr;
-    wire                      ic_act_valid;
-    wire [WT_ADDR_WIDTH-1:0]  ic_wt_addr;
-    wire                      ic_wt_valid;
-    wire                      ic_data_last, ic_addr_valid, ic_busy, ic_done;
-
-
-
-   
-   
-    
-    input                          i_fifo_full,
-
-    output reg [MEM_IF_ADDR_WIDTH-1:0] o_act_addr,           // activation SRAM read address
-    output reg                         o_act_valid,          // address is in-bounds (else zero-pad)
-    output reg [WT_ADDR_WIDTH-1:0]     o_wt_addr,            // weight SRAM read address
-    output reg [NUM_ARRAYS-1:0]        o_wt_valid,           // kernel index valid (else zero-pad)
-    output reg                         o_push_en,            // push data into the fifo + read sram signal
-
-    output reg                        o_im2col_done         // goes high on the cycle after data_last asserts
-
-
     im2col_gen u_im2col(
         .i_clk(i_clk),
         .i_rst_n(i_rst_n),
@@ -212,9 +187,8 @@ module computation_overseer #(
         .o_act_valid(o_comp_ren),
         .o_wt_addr(o_wt_sram_rd_addr),
         .o_wt_valid(o_wt_sram_rd_en),
-        .o_data_last(io_push_data_last),
-        .o_addr_valid(o_push_en),
-        .o_done(ic_done)
+        .o_push_en(o_push_en),
+        .o_im2col_done(ic_done)
     );
 
     //so there is moving to next kernel
@@ -313,7 +287,7 @@ module computation_overseer #(
 
             //reset these variables:
             curr_drain_waddr <= '0;
-            drain_wen <= '0;
+            // drain_wen <= '0; //drain_wen is combinationally driven
             // drain_wdata <= '0; Removed, now handled in pipeline block above
 
             

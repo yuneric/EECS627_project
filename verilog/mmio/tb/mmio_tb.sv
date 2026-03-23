@@ -5,7 +5,7 @@ module mmio_tb;
     reg resetn = 0;
     wire trap;
 
-    always #3.5 clk = ~clk;
+    always #(`CLK_PERIOD_HALF) clk = ~clk;
 
     initial begin
         repeat (100) @(posedge clk);
@@ -58,7 +58,15 @@ module mmio_tb;
 
     `ifdef SYN
     initial begin
+        $display("[%0t] Applying SDF", $time);
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmio/mmio.syn.sdf", mmio_dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/address_decoder/address_decoder.syn.sdf", addr_dec_dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", proc);
+        $display("[%0t] SDF annotation call finished", $time);
+    end
+    `else
+    initial begin
+        $display("[%0t] SYN not defined, no SDF annotation", $time);
     end
     `endif
 

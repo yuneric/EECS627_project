@@ -1,299 +1,317 @@
 `timescale 1ns/1ps
-// computation_overseer_tb.sv
-// Verifies comp overseer + im2col against golden addr dumps from im2col_gen.py
 
 module computation_overseer_tb;
 
-    parameter DIM = 8, NUM_ARRAYS = 8, DIM_FIELD_WIDTH = 8;
-    parameter ACT_ADDR_WIDTH = 15, WT_ADDR_WIDTH = 14, OUT_ADDR_WIDTH = 15;
-    parameter WORD_IDX_WIDTH = 8, DATA_WIDTH = 32;
+    //Parameters
+    parameter DIM               = 8;
+    parameter NUM_ARRAYS        = 8;
+    parameter DIM_WIDTH         = 10;
+    parameter MEM_IF_ADDR_WIDTH = 12;
+    parameter WT_ADDR_WIDTH     = 11;
+    parameter WORD_SIZE         = 64;
+    parameter SHIFT_WIDTH       = 5;
 
-    reg clk, rst_n;
+    //Clock & Reset
+    logic clk;
+    logic rst_n;
+
+    //DUT Signals
+    // Controller inputs
+    logic                   comp_compute_start;
+    logic [1:0]             comp_stride;
+    logic [1:0]             comp_padding;
+    logic                   comp_maxpool_en;
+    logic                   comp_relu_en;
+    logic [SHIFT_WIDTH-1:0] comp_scale_amt;
+    logic [DIM_WIDTH-1:0]   comp_Hi, comp_Wi;
+    logic [DIM_WIDTH-1:0]   comp_Hf, comp_Wf;
+    logic [DIM_WIDTH-1:0]   comp_Ho, comp_Wo;
+    logic [DIM_WIDTH-1:0]   comp_words_per_channel;
+    logic [DIM_WIDTH-1:0]   comp_num_kernels;
+    
+    // Outputs to Controller / Mem_IF
+    logic                           comp_done;
+    logic [MEM_IF_ADDR_WIDTH-1:0]   comp_waddr;
+    logic                           comp_wen;
+    logic [WORD_SIZE-1:0]           comp_wdata;
+    logic [MEM_IF_ADDR_WIDTH-1:0]   comp_raddr;
+    logic                           comp_ren;
+
+    // SA Slice & Im2Col Signals
+    logic                           cdc_req;
+    logic                           cdc_ack;
+    logic                           relu_en;
+    logic [SHIFT_WIDTH-1:0]         shift_by;
+    logic                           maxpool_en;
+    logic                           push_en;
+    logic [DIM-1:0]                 push_fifo_full;
+    logic [WT_ADDR_WIDTH-1:0]       wt_sram_rd_addr;
+    logic                           wt_sram_rd_en;
+    logic [NUM_ARRAYS-1:0]          array_active;
+
+    // FIFO Interface
+    logic [WORD_SIZE-1:0]           pop_data;
+    logic [DIM-1:0]                 pop_en;
+    logic [DIM-1:0]                 pop_empty;
+    logic [DIM-1:0]                 almost_empty;
+    logic [DIM-1:0]                 rd_full;
+    logic [DIM-1:0]                 rd_empty;
+
+    //Testbench Queues
+    logic [WORD_SIZE-1:0]           sa_fifos [DIM] [$];     
+    logic [WORD_SIZE-1:0]           expected_data_q [$];    
+    logic [MEM_IF_ADDR_WIDTH-1:0]   expected_waddr_q [$];
+    int                             expected_x_q [$];
+    int                             expected_y_q [$];
+    int                             expected_ch_q [$];
+
+    logic [WORD_SIZE-1:0]           exp_data;
+    logic [MEM_IF_ADDR_WIDTH-1:0]   exp_addr;
+    int                             exp_x_val;
+    int                             exp_y_val;
+    int                             exp_ch_val;
+    
+    // FIX: Removed the "= 0" initialization to prevent driver conflict
+    int num_errors;
+
+    //Clock Generation
     initial clk = 0;
     always #5 clk = ~clk;
 
-    reg start;
-    reg [DIM_FIELD_WIDTH-1:0] cfg_tile_H, cfg_tile_W, cfg_Hf, cfg_Wf;
-    reg [DIM_FIELD_WIDTH-1:0] cfg_stride, cfg_padding, cfg_Co, cfg_Ho, cfg_Wo;
-    reg [WORD_IDX_WIDTH-1:0]  cfg_words_ci;
-    reg cfg_relu_en, cfg_maxpool_en;
+    // Automatically acknowledge CDC requests
+    assign cdc_ack = cdc_req;
+    assign push_fifo_full = '0; 
 
-    wire [ACT_ADDR_WIDTH-1:0]           act_rd_addr;
-    wire                                act_rd_en;
-    reg  [DATA_WIDTH-1:0]              act_rd_data;
-    wire [WT_ADDR_WIDTH*NUM_ARRAYS-1:0] wt_rd_addr;
-    wire [NUM_ARRAYS-1:0]               wt_rd_en;
-    reg  [DATA_WIDTH*NUM_ARRAYS-1:0]   wt_rd_data;
-
-    wire [NUM_ARRAYS-1:0]               sa_wr_en;
-    wire [DATA_WIDTH-1:0]              sa_wr_act_data;
-    wire [DATA_WIDTH*NUM_ARRAYS-1:0]   sa_wr_wt_data;
-    wire [NUM_ARRAYS-1:0]               sa_wr_data_last;
-    reg  [NUM_ARRAYS-1:0]              sa_fifo_full;
-
-    reg  [NUM_ARRAYS-1:0]              sa_valid_out;
-    reg  [DATA_WIDTH*NUM_ARRAYS-1:0]   sa_data_out;
-    reg  [NUM_ARRAYS-1:0]              sa_flush_done;
-
-    wire [OUT_ADDR_WIDTH-1:0] out_wr_addr;
-    wire                      out_wr_en;
-    wire [DATA_WIDTH-1:0]    out_wr_data;
-    wire [NUM_ARRAYS-1:0]    array_active;
-    wire                      dut_busy, dut_done;
-
+    
     computation_overseer #(
-        .DIM(DIM), .NUM_ARRAYS(NUM_ARRAYS), .DIM_FIELD_WIDTH(DIM_FIELD_WIDTH),
-        .ACT_ADDR_WIDTH(ACT_ADDR_WIDTH), .WT_ADDR_WIDTH(WT_ADDR_WIDTH),
-        .OUT_ADDR_WIDTH(OUT_ADDR_WIDTH), .WORD_IDX_WIDTH(WORD_IDX_WIDTH),
-        .DATA_WIDTH(DATA_WIDTH)
+        .DIM(DIM), .NUM_ARRAYS(NUM_ARRAYS), .DIM_WIDTH(DIM_WIDTH),
+        .MEM_IF_ADDR_WIDTH(MEM_IF_ADDR_WIDTH), .WT_ADDR_WIDTH(WT_ADDR_WIDTH),
+        .WORD_SIZE(WORD_SIZE), .SHIFT_WIDTH(SHIFT_WIDTH)
     ) dut (
-        .i_clk                          (clk            ),
-        .i_rst_n                        (rst_n          ),
-        .i_start                        (start          ),
-        .i_cfg_tile_H                   (cfg_tile_H     ), 
-        .i_cfg_tile_W                   (cfg_tile_W     ),
-        .i_cfg_Hf                       (cfg_Hf         ), 
-        .i_cfg_Wf                       (cfg_Wf         ),
-        .i_cfg_stride                   (cfg_stride     ), 
-        .i_cfg_padding                  (cfg_padding    ),
-        .i_cfg_words_ci                 (cfg_words_ci   ),  
-        .i_cfg_Co                       (cfg_Co         ), 
-        .i_cfg_Ho                       (cfg_Ho         ), 
-        .i_cfg_Wo                       (cfg_Wo         ),
-        .i_cfg_relu_en                  (cfg_relu_en    ),
-        .i_cfg_maxpool_en               (cfg_maxpool_en ),
-        .o_act_rd_addr                  (act_rd_addr    ),
-        .o_act_rd_en                    (act_rd_en      ),
-        .i_act_rd_data                  (act_rd_data    ),
-        .o_wt_rd_addr                   (wt_rd_addr     ),
-        .o_wt_rd_en                     (wt_rd_en       ),
-        .i_wt_rd_data                   (wt_rd_data     ),
-        .o_sa_wr_en                     (sa_wr_en       ),
-        .o_sa_wr_act_data               (sa_wr_act_data ),
-        .o_sa_wr_wt_data                (sa_wr_wt_data  ),
-        .o_sa_wr_data_last              (sa_wr_data_last),
-        .i_sa_fifo_full                 (sa_fifo_full   ),
-        .i_sa_valid_out                 (sa_valid_out   ),
-        .i_sa_data_out                  (sa_data_out    ),
-        .i_sa_flush_done                (sa_flush_done  ),
-        .o_out_wr_addr                  (out_wr_addr    ),
-        .o_out_wr_en                    (out_wr_en      ),
-        .o_out_wr_data                  (out_wr_data    ),
-        .o_array_active                 (array_active   ),
-        .o_busy                         (dut_busy       ), 
-        .o_done                         (dut_done       )
+        .i_clk(clk), .i_rst_n(rst_n),
+        .i_comp_compute_start(comp_compute_start),
+        .i_comp_stride(comp_stride),
+        .i_comp_padding(comp_padding),
+        .i_comp_maxpool_en(comp_maxpool_en),
+        .i_comp_relu_en(comp_relu_en),
+        .i_comp_scale_amt(comp_scale_amt),
+        .i_comp_Hi(comp_Hi), .i_comp_Wi(comp_Wi),
+        .i_comp_Hf(comp_Hf), .i_comp_Wf(comp_Wf),
+        .i_comp_Ho(comp_Ho), .i_comp_Wo(comp_Wo),
+        .i_comp_words_per_channel(comp_words_per_channel),
+        .i_comp_num_kernels(comp_num_kernels),
+        .o_comp_done(comp_done),
+        .o_comp_waddr(comp_waddr),
+        .o_comp_wen(comp_wen),
+        .o_comp_wdata(comp_wdata),
+        .o_comp_raddr(comp_raddr),
+        .o_comp_ren(comp_ren),
+        .o_cdc_req(cdc_req),
+        .i_cdc_ack(cdc_ack),
+        .o_relu_en(relu_en),
+        .o_shift_by(shift_by),
+        .o_maxpool_en(maxpool_en),
+        .o_push_en(push_en),
+        .i_push_fifo_full(push_fifo_full),
+        .o_wt_sram_rd_addr(wt_sram_rd_addr),
+        .o_wt_sram_rd_en(wt_sram_rd_en),
+        .i_pop_data(pop_data),
+        .o_pop_en(pop_en),
+        .i_pop_empty(pop_empty),
+        .o_array_active(array_active),
+        .i_almost_empty(almost_empty),
+        .i_rd_full(rd_full),
+        .i_rd_empty(rd_empty)
     );
 
-    always @(posedge clk)
-        act_rd_data <= act_rd_en ? {{(DATA_WIDTH-ACT_ADDR_WIDTH){1'b0}}, act_rd_addr} : 0;
+    //FIFO Status
+    always_comb begin
+        for (int i = 0; i < DIM; i++) begin
+            pop_empty[i]    = (sa_fifos[i].size() == 0);
+            rd_empty[i]     = (sa_fifos[i].size() == 0);
+            almost_empty[i] = (sa_fifos[i].size() <= 2);
+            rd_full[i]      = (sa_fifos[i].size() >= 8); 
+        end
+    end
 
-    integer wi;
-    always @(posedge clk)
-        for (wi = 0; wi < NUM_ARRAYS; wi = wi + 1)
-            wt_rd_data[wi*DATA_WIDTH +: DATA_WIDTH] <=
-                wt_rd_en[wi] ? {wi[15:0], wt_rd_addr[wi*WT_ADDR_WIDTH +: 16]} : 0;
-
-    // fake SA to just count pushes and spit out dummy results so the FSM can drain
-    localparam SA_DELAY = 20;
-    reg [NUM_ARRAYS-1:0] computing;
-    reg [7:0] delay_cnt [0:NUM_ARRAYS-1];
-    reg [3:0] out_cnt   [0:NUM_ARRAYS-1];
-    integer si;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            sa_valid_out <= 0; sa_data_out <= 0;
-            sa_flush_done <= 0; computing <= 0;
-            for (si = 0; si < NUM_ARRAYS; si = si + 1) begin
-                delay_cnt[si] <= 0; out_cnt[si] <= 0;
-            end
-        end else begin
-            for (si = 0; si < NUM_ARRAYS; si = si + 1) begin
-                if (sa_wr_en[si] && sa_wr_data_last[si]) begin
-                    computing[si] <= 1; delay_cnt[si] <= 0; out_cnt[si] <= 0;
-                end
-                if (computing[si]) begin
-                    delay_cnt[si] <= delay_cnt[si] + 1;
-                    if (delay_cnt[si] >= SA_DELAY) begin
-                        if (out_cnt[si] < DIM) begin
-                            sa_valid_out[si] <= 1;
-                            sa_data_out[si*DATA_WIDTH +: DATA_WIDTH] <=
-                                {si[7:0], 4'b0, out_cnt[si], 16'hCAFE};
-                            out_cnt[si] <= out_cnt[si] + 1;
-                        end else begin
-                            sa_valid_out[si] <= 0;
-                            sa_flush_done[si] <= 1;
-                            computing[si] <= 0;
-                        end
-                    end
-                end
-                if (dut.state == 4'd3) begin // KG_SETUP resets everything
-                    computing[si] <= 0; sa_valid_out[si] <= 0;
-                    sa_flush_done[si] <= 0; delay_cnt[si] <= 0; out_cnt[si] <= 0;
-                end
+    //FIFO Pop Muxing Logic
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) pop_data <= '0;
+        else begin
+            for (int i = 0; i < DIM; i++) begin
+                if (pop_en[i] && sa_fifos[i].size() > 0) pop_data <= sa_fifos[i].pop_front(); 
             end
         end
     end
 
-    // golden brick comparison stuff
-    integer fd, rc;
-    integer g_aa, g_av, g_wa, g_wv, g_dl;  // golden values per line
-    integer hdr_Hi, hdr_Wi, hdr_Hf, hdr_Wf, hdr_s, hdr_p, hdr_wci, hdr_Co;
-    integer hdr_th, hdr_tv, hdr_xb, hdr_yb, hdr_total;
-    integer total_errs, total_feeds_ok;
-    integer aerr, werr, lerr;
-    integer f_idx, tmo, kn, ksz, exp_wt_base;
-    reg [8*128-1:0] fpath;
-
-    // open a tile file, read every golden line, compare against RTL
-    task check_tile(input reg [8*128-1:0] fname, input integer tidx);
-        begin
-            fd = $fopen(fname, "r");
-            if (!fd) begin
-                $display("  cant open %0s", fname);
-                aerr = aerr + 1;
-            end else begin
-                rc = $fscanf(fd, "# %d %d %d %d %d %d %d %d %d %d %d %d %d",
-                    hdr_Hi, hdr_Wi, hdr_Hf, hdr_Wf, hdr_s, hdr_p, hdr_wci, hdr_Co,
-                    hdr_th, hdr_tv, hdr_xb, hdr_yb, hdr_total);
-                ksz = hdr_Hf * hdr_Wf * hdr_wci;
-
-                for (f_idx = 0; f_idx < hdr_total; f_idx = f_idx + 1) begin
-                    // wait for a fifo push
-                    tmo = 0;
-                    while (tmo < 50000) begin
-                        @(posedge clk); #1;
-                        if (sa_wr_en[0]) tmo = 99999;
-                        tmo = tmo + 1;
-                    end
-
-                    if (tmo == 50000) begin
-                        $display("  TIMEOUT tile%0d feed%0d", tidx, f_idx);
-                        aerr = aerr + 1;
-                    end else begin
-                        rc = $fscanf(fd, "%d %d %d %d %d", g_aa, g_av, g_wa, g_wv, g_dl);
-                        kn = f_idx % DIM;
-                        exp_wt_base = g_wa - kn * ksz;
-
-                        // act addr
-                        if (g_av && act_rd_addr !== g_aa[ACT_ADDR_WIDTH-1:0]) begin
-                            if (aerr < 10)
-                                $display("  ACT tile%0d f%0d: got %0d exp %0d", tidx, f_idx, act_rd_addr, g_aa);
-                            aerr = aerr + 1;
-                        end
-
-                        // wt addr
-                        if (g_wv && kn == 0 &&
-                            wt_rd_addr[0 +: WT_ADDR_WIDTH] !== exp_wt_base[WT_ADDR_WIDTH-1:0]) begin
-                            if (werr < 10)
-                                $display("  WT tile%0d f%0d: got %0d exp %0d", tidx, f_idx,
-                                    wt_rd_addr[0 +: WT_ADDR_WIDTH], exp_wt_base);
-                            werr = werr + 1;
-                        end
-
-                        // data_last
-                        if (sa_wr_data_last[0] !== g_dl[0]) begin
-                            if (lerr < 5)
-                                $display("  LAST tile%0d f%0d: got %0b exp %0b",
-                                    tidx, f_idx, sa_wr_data_last[0], g_dl[0]);
-                            lerr = lerr + 1;
-                        end
-
-                        total_feeds_ok = total_feeds_ok + 1;
-                    end
+    //The Automated Checker
+    // FIX: Added negedge rst_n to sensitivity list
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            num_errors <= 0;
+        end else if (comp_wen) begin
+            if (expected_data_q.size() > 0) begin
+                //pop what should be at the address.
+                exp_data   = expected_data_q.pop_front();
+                exp_addr   = expected_waddr_q.pop_front();
+                exp_x_val  = expected_x_q.pop_front();
+                exp_y_val  = expected_y_q.pop_front();
+                exp_ch_val = expected_ch_q.pop_front();
+                
+                if (comp_waddr !== exp_addr) begin
+                    $display("ERROR @ time %0t: Address Mismatch! Expected: %03x, Got: %03x [Pixel: (%0d, %0d), Ch: %0h]", $time, exp_addr, comp_waddr, exp_x_val, exp_y_val, exp_ch_val);
+                    num_errors++;
                 end
-                $fclose(fd);
+                
+                if (comp_wdata !== exp_data) begin
+                    $display("ERROR @ time %0t: Data Mismatch! Expected: %16x, Got: %16x [Pixel: (%0d, %0d), Ch: %0h]", $time, exp_data, comp_wdata, exp_x_val, exp_y_val, exp_ch_val);
+                    num_errors++;
+                end
+                
+                if (comp_waddr === exp_addr && comp_wdata === exp_data) begin
+                    $display("SUCCESS: Wrote Data %16x to Addr %03x", comp_wdata, comp_waddr);
+                end
+            end else begin
+                $display("ERROR @ time %0t: Overseer wrote to memory, but EXPECT queue is empty!", $time);
+                num_errors++;
             end
         end
+    end
+
+    // --- Task to execute test sequence ---
+    task run_test();
+        $display("----------------------------------------");
+        $display("Starting Test execution...");
+        @(negedge clk);
+        comp_compute_start = 1;
+        @(negedge clk);
+        comp_compute_start = 0;
+        
+        wait(dut.state == 3'b000 && comp_done == 1'b1); 
+        repeat(5) @(posedge clk);
+        $display("DUT Finished Test execution.");
     endtask
 
-    // configure, kick off, iterate through all tile golden files, wait for done
-    task run_test(
-        input [DIM_FIELD_WIDTH-1:0] tH, tW, fH, fW, s, p,
-        input [WORD_IDX_WIDTH-1:0]  wci,
-        input [DIM_FIELD_WIDTH-1:0] co, ho, wo,
-        input integer ntiles,
-        input reg [8*128-1:0] dir
-    );
-        integer ti, w;
-        begin
-            cfg_tile_H = tH; cfg_tile_W = tW;
-            cfg_Hf = fH; cfg_Wf = fW;
-            cfg_stride = s; cfg_padding = p;
-            cfg_words_ci = wci; cfg_Co = co;
-            cfg_Ho = ho; cfg_Wo = wo;
-            cfg_relu_en = 0; cfg_maxpool_en = 0;
-            aerr = 0; werr = 0; lerr = 0;
-
-            @(posedge clk); start = 1;
-            @(posedge clk); start = 0;
-            while (!dut_busy) @(posedge clk);
-
-            for (ti = 0; ti < ntiles; ti = ti + 1) begin
-                $sformat(fpath, "%0s/tile%0d.txt", dir, ti);
-                check_tile(fpath, ti);
-            end
-
-            w = 0;
-            while (dut_busy && w < 500000) begin @(posedge clk); w = w + 1; end
-            if (w >= 500000) begin $display("  TIMEOUT waiting for done"); aerr = aerr + 1; end
-
-            if (aerr + werr + lerr == 0)
-                $display("  PASSED");
-            else
-                $display("  FAILED (%0d act / %0d wt / %0d last)", aerr, werr, lerr);
-
-            total_errs = total_errs + aerr + werr + lerr;
-            rst_n = 0; repeat(3) @(posedge clk); rst_n = 1; @(posedge clk);
-        end
-    endtask
+    // --- File Readers & Parsers ---
+    integer stim_fd;
+    integer expect_fd;
+    string token;
+    string dummy_str;
+    
+    // Parsing variables
+    int test_id;
+    logic [WORD_SIZE-1:0] parsed_data, exp_d;
+    int parsed_x, parsed_y, parsed_ch, parsed_valid;
+    int exp_x, exp_y, exp_ch;
+    string parsed_addr_str;
+    logic [MEM_IF_ADDR_WIDTH-1:0] exp_a;
+    int fifo_idx;
+    
+    bit test_loaded = 0;
 
     initial begin
-        $dumpfile("computation_overseer_tb.vcd");
-        $dumpvars(0, computation_overseer_tb);
-        total_errs = 0; total_feeds_ok = 0;
-        rst_n = 0; start = 0; sa_fifo_full = 0;
-        cfg_tile_H = 0; cfg_tile_W = 0; cfg_Hf = 0; cfg_Wf = 0;
-        cfg_stride = 0; cfg_padding = 0; cfg_words_ci = 0; cfg_Co = 0;
-        cfg_Ho = 0; cfg_Wo = 0; cfg_relu_en = 0; cfg_maxpool_en = 0;
-        repeat(5) @(posedge clk); rst_n = 1; @(posedge clk);
+        rst_n = 1;
+        comp_compute_start = 0;
+        comp_scale_amt = 0;
 
-        //                        tH tW fH fW  s  p wci co ho wo ntiles
-        $display("\n--- default: 4x4 f=2x2 s2 p1 Co=8 ---");
-        run_test(                  4, 4, 2, 2, 2, 1, 1, 8, 3, 3, 1, "co_golden_txt/default");
+        @(negedge clk);
+        rst_n = 0;
+        @(negedge clk);
+        rst_n = 1;
 
-        $display("\n--- no_pad: 8x8 f=3x3 s1 p0 Co=4 ---");
-        run_test(                  8, 8, 3, 3, 1, 0, 1, 4, 6, 6, 6, "co_golden_txt/no_pad");
+        // Open both files
+        stim_fd = $fopen("comp_over_test.in", "r");
+        expect_fd = $fopen("comp_over_test.out", "r");
+        // stim_fd = $fopen("verilog/controller/tb/comp_over_test.in", "r");
+        // expect_fd = $fopen("verilog/controller/tb/comp_over_test.out", "r");
+        
+        if (!stim_fd || !expect_fd) begin
+            $display("FATAL: Could not open one or both stim/expect files.");
+            $finish;
+        end
 
-        $display("\n--- stride2: 6x6 f=3x3 s2 p1 wci=2 Co=8 ---");
-        run_test(                  6, 6, 3, 3, 2, 1, 2, 8, 3, 3, 2, "co_golden_txt/stride2");
+        //Load ALL expected memory writes into the Checker Queue
+        $display("Loading Expected Outputs...");
+        while (!$feof(expect_fd)) begin
+            int r = $fscanf(expect_fd, "%s", token);
+            if (r <= 0) break;
+            
+            if (token == "test:") begin
+                // Consume the header row: "00 x y ch_start addr"
+                void'($fscanf(expect_fd, "%h %s %s %s %s", test_id, dummy_str, dummy_str, dummy_str, dummy_str));
+            end else begin
+                // Parse the expectation data line
+                void'($sscanf(token, "%h", exp_d));
+                void'($fscanf(expect_fd, "%h %h %h %h", exp_x, exp_y, exp_ch, exp_a));
+                
+                expected_data_q.push_back(exp_d);
+                expected_waddr_q.push_back(exp_a);
+                expected_x_q.push_back(exp_x);
+                expected_y_q.push_back(exp_y);
+                expected_ch_q.push_back(exp_ch);
+            end
+        end
+        $display("Loaded %0d expected writes.", expected_data_q.size());
 
-        $display("\n--- big: 10x10 f=3x3 s1 p1 Co=8 ---");
-        run_test(                 10,10, 3, 3, 1, 1, 1, 8,10,10,15, "co_golden_txt/big");
-
-        $display("\n--- rect: 12x8 f=3x3 s1 p0 Co=8 ---");
-        run_test(                 12, 8, 3, 3, 1, 0, 1, 8,10, 6,10, "co_golden_txt/rect");
-
-        $display("\n--- exact4: 5x7 f=3x3 s1 p1 Co=8 ---");
-        run_test(                  5, 7, 3, 3, 1, 1, 1, 8, 5, 7, 4, "co_golden_txt/exact4");
-
-        $display("\n--- 1x1: 4x4 f=1x1 s1 p0 Co=8 ---");
-        run_test(                  4, 4, 1, 1, 1, 0, 1, 8, 4, 4, 2, "co_golden_txt/1x1");
-
-        $display("\n--- deep: 3x3 f=3x3 s1 p1 wci=3 Co=4 ---");
-        run_test(                  3, 3, 3, 3, 1, 1, 3, 4, 3, 3, 1, "co_golden_txt/deep");
-
-        $display("\n--- tiny: 3x3 f=3x3 s1 p0 Co=8 ---");
-        run_test(                  3, 3, 3, 3, 1, 0, 1, 8, 1, 1, 1, "co_golden_txt/tiny");
-
-        $display("");
-        if (total_errs == 0)
-            $display("ALL %0d FEEDS PASSED", total_feeds_ok);
-        else
-            $display("FAILED: %0d errors across %0d feeds", total_errs, total_feeds_ok);
+        //Stream Stimulus into FIFOs and run the DUT
+        while (!$feof(stim_fd)) begin
+            int r = $fscanf(stim_fd, "%s", token);
+            if (r <= 0) break;
+            
+            if (token == "test:") begin
+                // If we hit a new "test:" block but already loaded data, run the loaded test first
+                if (test_loaded) begin
+                    run_test();
+                    test_loaded = 0;
+                end
+                
+                // Parse the config line
+                void'($fscanf(stim_fd, "%h comp_Hi: %h comp_Wi: %h comp_Hf: %h comp_Wf: %h comp_Ho: %h comp_Wo: %h comp_words_per_channel: %h comp_num_kernels: %h comp_stride: %h comp_padding: %h comp_maxpool_en: %h comp_relu_en: %h",
+                    test_id, comp_Hi, comp_Wi, comp_Hf, comp_Wf, comp_Ho, comp_Wo, comp_words_per_channel, comp_num_kernels, comp_stride, comp_padding, comp_maxpool_en, comp_relu_en));
+                
+                $display("Parsed CONFIG: Ho=%0h, Wo=%0h, Co=%0h", comp_Ho, comp_Wo, comp_num_kernels);
+                
+            end else begin
+                // Parse the FIFO stimulus data line
+                void'($sscanf(token, "%h", parsed_data));
+                void'($fscanf(stim_fd, "%h %h %h %d %s", parsed_x, parsed_y, parsed_ch, parsed_valid, parsed_addr_str));
+                
+                // Only push to FIFOs if valid
+                if (parsed_valid == 1) begin
+                    fifo_idx = (parsed_ch / 8) % NUM_ARRAYS;
+                    sa_fifos[fifo_idx].push_back(parsed_data);
+                    test_loaded = 1;
+                end
+            end
+        end
+        
+        // Execute the final test loaded from the file
+        if (test_loaded) begin
+            run_test();
+        end
+        
+        // --- Final Grading ---
+        if (num_errors == 0 && expected_waddr_q.size() == 0) begin
+            $display("========================================");
+            $display("TEST PASSED! ALL DRAIN WRITES MATCH!");
+            $display("========================================");
+        end else begin
+            $display("========================================");
+            $display("TEST FAILED WITH %0d ERRORS.", num_errors);
+            if (expected_waddr_q.size() > 0) begin
+                $display("WARNING: Leftover EXPECTs in queue that were never written: %0d", expected_waddr_q.size());
+            end
+            $display("========================================");
+        end
+        
         $finish;
     end
 
-    initial begin #100_000_000; $display("TIMEOUT"); $finish; end
+    // Timeout failsafe
+    initial begin
+        #500000;
+        $display("TIMEOUT ERROR: Simulation hung. Check state machine logic.");
+        $finish;
+    end
 
 endmodule

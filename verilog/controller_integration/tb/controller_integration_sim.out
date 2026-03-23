@@ -2,7 +2,8 @@ Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detec
 Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
 Chronologic VCS simulator copyright 1991-2025
 Contains Synopsys proprietary information.
-Compiler version X-2025.06-1_Full64; Runtime version X-2025.06-1_Full64;  Mar 17 19:02 2026
+Compiler version X-2025.06-1_Full64; Runtime version X-2025.06-1_Full64;  Mar 23 00:42 2026
+[0] SYN not defined, no SDF annotation
 *Verdi* Loading libsscore_vcs202506.so
 FSDB Dumper for VCS, Release Verdi_X-2025.06-1, Linux x86_64/64bit, 07/19/2025
 (C) 1996 - 2025 by Synopsys, Inc.
@@ -25,8 +26,8 @@ TB MAILBOX: Verifying Load Tile for Test 0...
 PASS load_tile test0
 Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 0 
-PASS load_weights test0
-Storing tile!
+SPASS load_weights test0
+toring tile!
 TB MAILBOX: Verifying Store Tile for Test 0 
 PASS store_tile test0
 Reg Vals!
@@ -59,8 +60,8 @@ TB MAILBOX: Verifying Load Tile for Test 1...
 PASS load_tile test1
 Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 1 
-SPASS load_weights test1
-toring tile!
+StorPASS load_weights test1
+ing tile!
 TB MAILBOX: Verifying Store Tile for Test 1 
 PASS store_tile test1
 Reg Vals!
@@ -95,9 +96,9 @@ Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 2 
 Storing tile!
 Reg Vals!
-command_reg: PASS load_weights test2
-         0003
-comp_cfg_reg:         0000
+command_reg:          0003
+comp_cfg_reg:         0000PASS load_weights test2
+
 comp_cfg_H_reg:       0000
 comp_cfg_W_reg:       0000
 comp_cfg_C_reg:       0000
@@ -127,10 +128,10 @@ Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 3 
 Storing tile!
 Reg Vals!
-command_reg:     PASS load_weights test3
-     0003
+command_reg:          0003
 comp_cfg_reg:         0000
-comp_cfg_H_reg:       0000
+comPASS load_weights test3
+p_cfg_H_reg:       0000
 comp_cfg_W_reg:       0000
 comp_cfg_C_reg:       0000
 input_tile_cfg_H_reg: 0002
@@ -157,8 +158,8 @@ TB MAILBOX: Verifying Load Tile for Test 4...
 PASS load_tile test4
 Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 4 
-Storing tPASS load_weights test4
-ile!
+Storing tile!
+PASS load_weights test4
 TB MAILBOX: Verifying Store Tile for Test 4 
 PASS store_tile test4
 Reg Vals!
@@ -193,9 +194,9 @@ Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 5 
 Storing tile!
 Reg Vals!
-commPASS load_weights test5
-and_reg:          0003
-comp_cfg_reg:         0000
+command_reg:          0003
+comp_cfg_PASS load_weights test5
+reg:         0000
 comp_cfg_H_reg:       0000
 comp_cfg_W_reg:       0000
 comp_cfg_C_reg:       0000
@@ -226,9 +227,9 @@ TB MAILBOX: Verifying Load Weights for Test 6
 Storing tile!
 Reg Vals!
 command_reg:          0003
-PASS load_weights test6
 comp_cfg_reg:         0000
 comp_cfg_H_reg:       0000
+PASS load_weights test6
 comp_cfg_W_reg:       0000
 comp_cfg_C_reg:       0000
 input_tile_cfg_H_reg: 0002
@@ -257,9 +258,9 @@ Loading weights!
 TB MAILBOX: Verifying Load Weights for Test 7 
 Storing tile!
 Reg Vals!
-command_rPASS load_weights test7
-eg:          0003
-comp_cfg_reg:         0000
+command_reg:          0003
+comp_cfg_reg:      PASS load_weights test7
+   0000
 comp_cfg_H_reg:       0000
 comp_cfg_W_reg:       0000
 comp_cfg_C_reg:       0000
@@ -282,9 +283,9 @@ status_reg:           001C
 All tests complete!
 DONE
 CPU TRAP HIT - SIMULATION FINISHED
-$finish called from file "verilog/controller_integration/tb/controller_integration_tb.sv", line 528.
-$finish at simulation time           2317720000
+$finish called from file "verilog/controller_integration/tb/controller_integration_tb.sv", line 550.
+$finish at simulation time           1159100000
            V C S   S i m u l a t i o n   R e p o r t 
-Time: 2317720000 ps
-CPU Time:      2.400 seconds;       Data structure size:   0.6Mb
-Tue Mar 17 19:02:05 2026
+Time: 1159100000 ps
+CPU Time:      2.490 seconds;       Data structure size:   0.6Mb
+Mon Mar 23 00:42:04 2026
