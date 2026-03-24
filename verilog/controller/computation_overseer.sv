@@ -95,6 +95,7 @@ module computation_overseer #(
 
     //account for 1 cycle of latency
     always_ff @(posedge i_clk or negedge i_rst_n) begin
+    // always_ff @(negedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
             drain_wen_q <= '0;
             curr_drain_waddr_q <= '0;
@@ -103,15 +104,21 @@ module computation_overseer #(
             //accounts for the cycle latency.
             drain_wen_q <= drain_wen;
             curr_drain_waddr_q <= curr_drain_waddr;
-            if (drain_wen_q) begin
-                drain_wdata <= i_pop_data;
-            end
+            // // if (drain_wen_q) begin
+            // if (drain_wen) begin
+            //     drain_wdata <= i_pop_data;
+            // end
+            drain_wdata <= i_pop_data;
         end
     end
 
     //assign the drain write info to the output port using the DELAYED signals. 
+    //
     assign o_comp_waddr = curr_drain_waddr_q; 
-    assign o_comp_wen = drain_wen_q;         
+    assign o_comp_wen = drain_wen_q;   
+    // assign o_comp_waddr = curr_drain_waddr;   
+    // assign o_comp_wen = drain_wen;      
+    //registered from pop_data
     assign o_comp_wdata = drain_wdata;
 
     // Latched in i_start inputs
@@ -387,7 +394,7 @@ module computation_overseer #(
         end else if (state == WAIT_FOR_DRAIN) begin 
             //reset these signals
             drain_curr_systolic_array <= '0; //keeps track of the current sa we're keeping track of.
-        end else if (state == DRAIN) begin
+        end else if (state == DRAIN && ~(&i_pop_empty)) begin
             //starting over plan: so basically we go to drain after we're done calculating a tile.
             //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
             //so let's see if our active channels logic is correct. 
@@ -438,7 +445,7 @@ module computation_overseer #(
         o_pop_en = '0;
         drain_wen = '0;
 
-        if(state == DRAIN) begin
+        if(state == DRAIN && ~(&i_pop_empty)) begin
             o_pop_en[drain_curr_systolic_array] = 1;
             drain_wen = 1;
         end
