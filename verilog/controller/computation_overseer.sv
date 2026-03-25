@@ -50,33 +50,38 @@ module computation_overseer #(
     //TODO: need to ask about these signals -> probably have to interface with im2col_gen don't worry about this.
     output  logic o_push_en,
     output logic o_data_last,
-    input logic [DIM-1:0] i_push_fifo_full, //we need to get stuff from of our slices
+    input logic [NUM_ARRAYS-1:0] i_push_fifo_full, //we need to get stuff from of our slices
 
     // Local weight SRAM ports - should get wt_sram_rd addr and en from im2col
     //weight addr rd addr and sram rd en
     //comes from im2col_gen
     //this is fine because all 8 will need to read from this
     output  logic [WT_ADDR_WIDTH-1:0] o_wt_sram_rd_addr,
-    output  logic  o_wt_sram_rd_en,
+    output  logic [NUM_ARRAYS-1:0] o_wt_sram_rd_en,
 
     //notes need to pop_en to enable drain
     //pop_data is the data sent from 
     // Output Fifo
     //TODO: discuss but i'm assuming there's going to be some sort of muxing logic that only sends one set of 64 bits.
     input logic [WORD_SIZE-1:0] i_pop_data,
-    output logic [DIM-1:0] o_pop_en,
-    input logic  [DIM-1:0] i_pop_empty, 
+    output logic [NUM_ARRAYS-1:0] o_pop_en,
+    input logic  [NUM_ARRAYS-1:0] i_pop_empty, 
 
     // misc -we're gonna still use this for now
     output wire [NUM_ARRAYS-1:0] o_array_active,
 
 
     //from sa_slice - async fifos - need to edit in systolic array slice
-    input logic [DIM-1:0] i_almost_empty, //2 (max_pool enabled)
-    input logic [DIM-1:0] i_rd_full //8 have all data.
-    // input logic [DIM-1:0] i_rd_empty //async 
+    input logic [NUM_ARRAYS-1:0] i_almost_empty, //2 (max_pool enabled)
+    input logic [NUM_ARRAYS-1:0] i_pop_full //8 have all data.
+    // input logic [NUM_ARRAYS-1:0] i_rd_empty //async 
 
 );
+
+
+
+    //latch in these values into registers because they are already large wires.
+    logic [NUM_ARRAYS-1:0] d_pop_empty, d_almost_empty, d_pop_full;
 
 
     localparam [2:0] IDLE = 0, SETUP = 1, TILE_SETUP = 2, COMPUTE = 3, WAIT_FOR_DRAIN = 4, DRAIN = 5;
@@ -106,7 +111,7 @@ module computation_overseer #(
             curr_drain_waddr_q <= curr_drain_waddr;
             // // if (drain_wen_q) begin
             // if (drain_wen) begin
-            //     drain_wdata <= i_pop_data;
+            //      drain_wdata <= i_pop_data;
             // end
             drain_wdata <= i_pop_data;
         end
@@ -130,7 +135,6 @@ module computation_overseer #(
 
 
     //tbd if we need this 
-    logic [(DIM_WIDTH*2)-1:0] num_tiles;
     logic  d_comp_relu_en, d_comp_maxpool_en;
     logic  [SHIFT_WIDTH-1:0] d_comp_scale_amt;
 
@@ -146,25 +150,21 @@ module computation_overseer #(
     logic                       y_bound;
     logic [DIM_WIDTH-1:0]       potential_x_bound, potential_y_bound;
 
-    //pixel-x: ({curr_tile_x, 2'b00}) 
-    //pixel-y: ({curr_tile_y, 1'b0})
-    logic [DIM_WIDTH-1:0] base_pixel_x;
-    assign base_pixel_x = {curr_tile_x, 2'b00}; // left shift by 2 is * 4
+    //this keeps track of the current pixel.
+    logic [DIM_WIDTH-1:0]       output_pixel_x, output_pixel_y, next_pixel_x, next_pixel_y;
 
-    logic [DIM_WIDTH-1:0] base_pixel_y;
-    assign base_pixel_y = {curr_tile_y, 1'b0};
-
-    //im2col - start that goes into im2colgen
-    logic im2col_gen_inputs_valid;
-
-    //this is a counter that will help us move to a new row when we reconstruct pixels to move back into mem_if.
-    //so our mem_if activation data should be in hwc but laid out in 2x4. 
-    //0 to 3 -> then stride -> then go back after 7.
-    logic [2:0] reconstruction_new_row_cntr;
-
+    // assign output_pixel_x = {curr_tile_x, 2'b00};
+    // assign output_pixel_y = {curr_tile_x, 2'b00};
     
 
-    assign im2col_gen_inputs_valid = (state == COMPUTE);
+    //im2col - start that goes into im2colgen
+    logic im2col_start;
+
+    assign im2col_start = ((state == SETUP) || (state == TILE_SETUP)) && (next_state == COMPUTE);
+
+
+    //done signal from im2gencol will help us move back to compute state eventually 
+    logic ic_done; 
 
 
 
@@ -173,9 +173,10 @@ module computation_overseer #(
     assign o_array_active = active;
 
     //handshake signal to let you know that you've gone through all the kernel groups
-    assign o_comp_done = ((curr_tile_x == num_tiles_in_width - 1) && 
-                    (curr_tile_y == num_tiles_in_height - 1) && 
-                    ((kernels_processed + num_kernels_per_group) >= d_comp_num_kernels)); 
+    // assign o_comp_done = ((curr_tile_x == num_tiles_in_width - 1) && 
+    //                 (curr_tile_y == num_tiles_in_height - 1) && 
+    //                 ((kernels_processed + num_kernels_per_group) >= d_comp_num_kernels)); 
+    assign o_comp_done = (state == TILE_SETUP) && (next_state == IDLE);
 
     //next step is figuring out what setting logic does.
     // array_enable = [0] * num_arrays
@@ -204,7 +205,7 @@ module computation_overseer #(
         .i_cfg_sub_tile_y(curr_tile_y),
         .i_cfg_x_bound(x_bound),
         .i_cfg_y_bound(y_bound),
-        .i_im2col_start(im2col_gen_inputs_valid), //start.
+        .i_im2col_start(im2col_start), //start.
         .i_fifo_full(|i_push_fifo_full),
         .o_act_addr(o_comp_raddr),
         .o_act_valid(o_comp_ren),
@@ -263,13 +264,15 @@ module computation_overseer #(
                 //     next_state = DRAIN;
                 // end
                 //now waiting for all the output data to arrive before we move to the drain state
-                if(d_comp_maxpool_en && (&(~i_almost_empty | ~active)) || (&(i_rd_full | ~active))) begin
+                // if((d_comp_maxpool_en && (&(~i_almost_empty | ~active))) || (&(i_pop_full | ~active))) begin
+                if ((d_comp_maxpool_en && (&(~d_almost_empty | ~active))) || (&(d_pop_full | ~active))) begin
                     next_state = DRAIN;
                 end
             DRAIN:
                 //we could just do empty
                 //and all the signals so fully empty -> all systolic array output buffers are empty.
-                if (&i_pop_empty) begin
+                // if (&i_pop_empty) begin
+                if (&d_pop_empty) begin
                     next_state = TILE_SETUP;
                 end
             default: next_state = IDLE; // Good practice guardrail
@@ -289,8 +292,13 @@ module computation_overseer #(
     //x_bound = min(Wo - top_left_output_pixel_x - 1, 3)
     //y_bound = min(Ho - top_left_output_pixel_y - 1, 1)
 
-    assign potential_x_bound = d_comp_Wo - ({curr_tile_x, 2'b00}) - 1; 
-    assign potential_y_bound = d_comp_Ho - ({curr_tile_y, 1'b0}) - 1; 
+    // assign potential_x_bound = d_comp_Wo - ({curr_tile_x, 2'b00}) - 1; 
+    // assign potential_y_bound = d_comp_Ho - ({curr_tile_y, 1'b0}) - 1; 
+    // Slice curr_tile_x to DIM_WIDTH-2 bits, then append 2'b00 to keep it exactly DIM_WIDTH wide
+    assign potential_x_bound = d_comp_Wo - {curr_tile_x[DIM_WIDTH-3:0], 2'b00} - 1'b1;
+
+    // Similarly for the Y bound (appending 1 bit, so slice 1 bit off)
+    assign potential_y_bound = d_comp_Ho - {curr_tile_y[DIM_WIDTH-2:0], 1'b0} - 1'b1;
 
    
     assign x_bound = (potential_x_bound < 2'd3) ? potential_x_bound[1:0] : 2'd3;
@@ -313,10 +321,7 @@ module computation_overseer #(
             //reset these variables:
             curr_drain_waddr <= '0;
             // drain_wen <= '0; //drain_wen is combinationally driven
-            // drain_wdata <= '0; Removed, now handled in pipeline block above
-            reconstruction_new_row_cntr <= '0;
-
-            
+            // drain_wdata <= '0; Removed, now handled in pipeline block above 
         //latched in for setup
         end else if (state == IDLE && i_comp_compute_start) begin
             d_comp_Ho   <= i_comp_Ho;
@@ -341,6 +346,7 @@ module computation_overseer #(
             curr_tile_x <= '0;
             curr_tile_y <= '0;
             curr_kernel_group <= '0;
+            curr_drain_waddr <= '0;
            
             //kernels per group;
             //if there is 64 or less, then you just have 1 num_kernel_groups
@@ -360,17 +366,13 @@ module computation_overseer #(
                 num_kernels_per_group <= 64;
                 active <= '1;
             end
-
-        // =========================================================
-        // LEAVING DRAIN: Update all coordinates securely before setup
-        // =========================================================
-        end else if (state == DRAIN && &i_pop_empty) begin
+        end else if (state == TILE_SETUP) begin 
             //INCREMENT kernel group
             //we don't want to increment kernel group all the time.
             //basically if we're done with all the then we want to reset tile_x and tile_y and move to the next tile.
             //if curr_tile_x is less than num_tiles_in_width
             if(curr_tile_x < num_tiles_in_width - 1) begin
-                //else so its at the last index, so we want to reset.
+            //else so its at the last index, so we want to reset.
                 curr_tile_x <= curr_tile_x + 1;
             end else begin
                 //curr tile_x is reset
@@ -386,11 +388,11 @@ module computation_overseer #(
                     //kernel group is done.
                     curr_kernel_group <= curr_kernel_group + 1; 
 
-                    //update curr_drain_waddr here because we're at a new curr_kernel group.
-                    //you'll move back to pixel 0.
-                    if(d_comp_maxpool_en) begin
-                        curr_drain_waddr <= (kernels_processed >> 3);
-                    end
+                    //reset curr_drain_waddr to go back where it should be for the first pixel
+                    curr_drain_waddr <= ((kernels_processed + num_kernels_per_group) >> 3);
+
+                    //need to reset curr_sa.
+                    drain_curr_systolic_array <= '0;
 
                     //update kernels processed and active
                     kernels_processed <= kernels_processed + num_kernels_per_group; 
@@ -411,34 +413,35 @@ module computation_overseer #(
                     end
                 end
             end   
-
-        //Updated tile setup
-        end else if (state == TILE_SETUP) begin 
-            //so each drain is for one tile -> 8 pieces for non-max pooling. 
-            //so the options would be to move back to address or move to the next row. 
-            //pixel-x: ({curr_tile_x, 2'b00}) 
-            //pixel-y: ({curr_tile_y, 1'b0})
-            // Addr = [ (Y * Image_Width) + X ] * (Total_Channels / 8) + (Current_Kernel_Offset)
-            //so pixel_y * width gives us the row, then + pixel_x gives us the pixel, then number of channels/8 to get the
-            //first address of the pixel we want and then kernels_processed helps us track the current channel we should be on.
-            //if maxpooling, it should just be kernels_processed >> 3.
-            if(!d_comp_maxpool_en) begin
-                curr_drain_waddr <= ( ((base_pixel_y * d_comp_Wo) + base_pixel_x) * (d_comp_num_kernels >> 3) ) 
-                                    + (kernels_processed >> 3);
-            end
-
-            //reset the counter
-            reconstruction_new_row_cntr <= '0;
-
-            //need to reset curr_sa.
-            drain_curr_systolic_array <= '0;
-
         end else if (state == WAIT_FOR_DRAIN) begin 
             //reset these signals
             drain_curr_systolic_array <= '0; //keeps track of the current sa we're keeping track of.
 
-        //well inside the drain not moving out of drain yet.
-        end else if (state == DRAIN && ~(&i_pop_empty)) begin
+            //want to setup the output pixels for reconstruction
+            //this gives you the top left pixel.
+            //if(d_comp_maxpool_en) begin
+                // //output pixels are 1 x 2. 
+                // //x2
+                // output_pixel_x <= {curr_tile_x, 2'b0};
+                // //x1
+                // output_pixel_y <= curr_tile_y;
+            // end else begin
+                //x4
+                output_pixel_x <= {curr_tile_x, 2'b00};
+                //x2
+                output_pixel_y <= {curr_tile_y, 1'b0};
+            // end
+
+            //want to reset if we go back to top row for not max_pool_en.
+            //else you want to keep -> this decides if we go back up or to the next row.
+            if(!d_comp_maxpool_en) begin
+                curr_drain_waddr <=  ( ({curr_tile_y, 1'b0} * num_tiles_in_width * 4 + {curr_tile_x, 2'b00}) * ((d_comp_num_kernels +7) >> 3) ) + (kernels_processed >> 3);
+            end
+            
+
+    
+        // end else if (state == DRAIN && ~(&i_pop_empty)) begin
+        end else if (state == DRAIN && d_pop_empty != 8'h7f) begin
             //starting over plan: so basically we go to drain after we're done calculating a tile.
             //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
             //so let's see if our active channels logic is correct. 
@@ -451,8 +454,8 @@ module computation_overseer #(
             //you need to keep track of write_addr to mem_if which we have. 
             //we have drain_curr_systolic_array to do that -> when we're cycling back to systolic array 0, that's when we want to add in the stride.
             /* input logic [WORD_SIZE-1:0] o_pop_data,
-            output logic [DIM-1:0] o_pop_en,
-            input logic  [DIM-1:0] i_pop_empty*/
+            output logic [NUM_ARRAYS-1:0] o_pop_en,
+            input logic  [NUM_ARRAYS-1:0] i_pop_empty*/
 
             //we basically want to pipeline pop_en, and then writing to output mem_if a cycle later [MEM_IF_ADDR_WIDTH-1:0] o_comp_waddr, //write the drain data to mem_if
             //output   o_comp_wen, //write enable
@@ -478,35 +481,95 @@ module computation_overseer #(
                 //at this point we're moving onto the next pixel, so have to calculate stride
                 //increment mem_if address by 1.
                 //we want to increment the addrss to be current address + the remaining kernels.
-                //when we circle back to the front there are edge cases.
-                if(!d_comp_maxpool_en) begin  
-                    reconstruction_new_row_cntr <= reconstruction_new_row_cntr + 1;
-
-                    //so you're at less than 3 pixels so continue processing
-                    if(reconstruction_new_row_cntr < 3 || (reconstruction_new_row_cntr > 3 && reconstruction_new_row_cntr < 7)) begin
-                        //just add the stride if you have multiple kernel groups so greater than 64 channels
-                        curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
-                    end else if(reconstruction_new_row_cntr == 3) begin
-                        //then you need to consider the width of 4 more pixels. that's 4 * d_comp_num_kernels
-                        //want to move to end of this pixel, then add 4 full pixels amount
-                        curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1 + 4 * (d_comp_num_kernels >> 3);
-                    end 
+                //this is when we want to switch to a new pixel.
+                //curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
+                //okay let's think about this. 
+                //so in the case there is max pooling, it would just be two tiles in order.
+                //if we do this math; it would start doing the strides. 
+                //you have to update the pixel here too.
+                if(d_comp_maxpool_en) begin
+                    curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group + 7) >> 3) + 1;
                 end else begin
-                    // Max-pooling behavior goes here!
-                    curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
+                    curr_drain_waddr <=  ( (next_pixel_y * num_tiles_in_width * 4 + next_pixel_x) * ((d_comp_num_kernels + 7) >> 3) ) + (kernels_processed >> 3);
                 end
-                
+
+                // //then you want to change the pixel.
+                // if(d_comp_maxpool_en) begin
+                //     // Maxpool tiles are 1x2 (Width is 2)
+                //     // Check if we haven't reached the end of the current tile's row
+                //     if(output_pixel_x < ({curr_tile_x, 2'b0} + 1)) begin 
+                //         output_pixel_x <= output_pixel_x + 1;
+                //     end else begin
+                //         // Reset X to the start of the CURRENT tile
+                //         output_pixel_x <= {curr_tile_x, 2'b0};
+                //         // Move Y to the next row
+                //         output_pixel_y <= output_pixel_y + 1;
+                //     end
+                // end else begin
+                //     // Standard tiles are 2x4 (Width is 4)
+                //     // Use your x_bound to handle edge cases properly!
+                //     if(output_pixel_x < ({curr_tile_x, 2'b00} + 3)) begin
+                //         output_pixel_x <= output_pixel_x + 1;
+                //     end else begin
+                //         // Reset X to the start of the CURRENT tile
+                //         output_pixel_x <= {curr_tile_x, 2'b00};
+                //         // Move Y to the next row
+                //         output_pixel_y <= output_pixel_y + 1;
+                //     end
+                // end
+
+                //next output pixel being set.
+                output_pixel_x <= next_pixel_x;
+                output_pixel_y <= next_pixel_y;
             end
   
+        end
+
+        //latch in regardless.
+        d_almost_empty <= i_almost_empty;
+        d_pop_empty <= i_pop_empty;
+        d_pop_full <= i_pop_full;
+    end
+
+    // logic [DIM_WIDTH-1:0] next_pixel_x, next_pixel_y;
+
+    always_comb begin
+        // Default to current values
+        next_pixel_x = output_pixel_x;
+        next_pixel_y = output_pixel_y;
+
+        // if (d_comp_maxpool_en) begin
+        //     if (output_pixel_x < ({curr_tile_x, 2'b0} + 1)) begin 
+        //         next_pixel_x = output_pixel_x + 1;
+        //     end else begin
+        //         next_pixel_x = {curr_tile_x, 2'b0};
+        //         next_pixel_y = output_pixel_y + 1;
+        //     end
+        // end else begin
+        //     if (output_pixel_x < ({curr_tile_x, 2'b00} + 3)) begin
+        //         next_pixel_x = output_pixel_x + 1;
+        //     end else begin
+        //         next_pixel_x = {curr_tile_x, 2'b00};
+        //         next_pixel_y = output_pixel_y + 1;
+        //     end
+        // end
+
+        if (output_pixel_x < ({curr_tile_x, 2'b00} + 3)) begin
+            next_pixel_x = output_pixel_x + 1;
+        end else begin
+            next_pixel_x = {curr_tile_x, 2'b00};
+            next_pixel_y = output_pixel_y + 1;
         end
     end
 
     //always comb use to toggle o_pop_en, and pop_data.
+    //okay so this combinational logic of if statement going into o_pop_en is not meeting timing.
     always_comb begin
         o_pop_en = '0;
         drain_wen = '0;
 
-        if(state == DRAIN && ~(&i_pop_empty)) begin
+        // if(state == DRAIN && ~(&i_pop_empty)) begin
+        if(state == DRAIN && (d_pop_empty != 8'h7f)) begin
             o_pop_en[drain_curr_systolic_array] = 1;
             drain_wen = 1;
         end
