@@ -101,7 +101,8 @@ module computation_overseer #(
     logic drain_wen_q;
     logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr_q;
 
-    logic [NUM_ARRAYS-1:0] drain_curr_systolic_array; //keeps track of the current sa we're keeping track of.
+    //logic [NUM_ARRAYS-1:0] drain_curr_systolic_array; //keeps track of the current sa we're keeping track of.
+    logic [2:0] drain_curr_systolic_array;
 
 
     //account for 1 cycle of latency
