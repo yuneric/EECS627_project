@@ -83,6 +83,9 @@ module computation_overseer #(
     //latch in these values into registers because they are already large wires.
     logic [NUM_ARRAYS-1:0] d_pop_empty, d_almost_empty, d_pop_full;
 
+    //will keep track of the number of writes to each array.
+    logic [NUM_ARRAYS-1:0][2:0] drain_cntr;
+
 
     localparam [2:0] IDLE = 0, SETUP = 1, TILE_SETUP = 2, COMPUTE = 3, WAIT_FOR_DRAIN = 4, DRAIN = 5;
 
@@ -98,6 +101,9 @@ module computation_overseer #(
     logic drain_wen_q;
     logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr_q;
 
+    logic [NUM_ARRAYS-1:0] drain_curr_systolic_array; //keeps track of the current sa we're keeping track of.
+
+
     //account for 1 cycle of latency
     always_ff @(posedge i_clk or negedge i_rst_n) begin
     // always_ff @(negedge i_clk or negedge i_rst_n) begin
@@ -106,14 +112,20 @@ module computation_overseer #(
             curr_drain_waddr_q <= '0;
             drain_wdata <= '0;
         end else begin
-            //accounts for the cycle latency.
-            drain_wen_q <= drain_wen;
-            curr_drain_waddr_q <= curr_drain_waddr;
-            // // if (drain_wen_q) begin
-            // if (drain_wen) begin
-            //      drain_wdata <= i_pop_data;
-            // end
-            drain_wdata <= i_pop_data;
+            if(state == WAIT_FOR_DRAIN) begin
+                //want to reset drain_cntr here:
+                drain_cntr <= '0;
+            end else begin
+                //accounts for the cycle latency.
+                drain_wen_q <= drain_wen;
+                curr_drain_waddr_q <= curr_drain_waddr;
+                // if (drain_wen_q) begin
+                if (drain_wen) begin
+                    //so this increments when we feed out comp_wen.
+                    drain_cntr[drain_curr_systolic_array] <= drain_cntr[drain_curr_systolic_array] + 1; 
+                end
+                drain_wdata <= i_pop_data;
+            end
         end
     end
 
@@ -160,7 +172,14 @@ module computation_overseer #(
     //im2col - start that goes into im2colgen
     logic im2col_start;
 
-    assign im2col_start = ((state == SETUP) || (state == TILE_SETUP)) && (next_state == COMPUTE);
+    always_ff @(posedge i_clk or negedge i_rst_n) begin
+        if(!i_rst_n) begin 
+            im2col_start = 1'b0;
+        end else begin
+            im2col_start = ((state == SETUP) || (state == TILE_SETUP)) && (next_state == COMPUTE);
+        end
+    end
+    //assign im2col_start = ((state == SETUP) || (state == TILE_SETUP)) && (next_state == COMPUTE);
 
 
     //done signal from im2gencol will help us move back to compute state eventually 
@@ -272,7 +291,14 @@ module computation_overseer #(
                 //we could just do empty
                 //and all the signals so fully empty -> all systolic array output buffers are empty.
                 // if (&i_pop_empty) begin
-                if (&d_pop_empty) begin
+                // if (&d_pop_empty) begin
+                if(drain_curr_systolic_array < 7 && !active[drain_curr_systolic_array + 1] && d_comp_maxpool_en && drain_cntr[drain_curr_systolic_array] == 1) begin
+                    next_state = TILE_SETUP;
+                end else if(drain_curr_systolic_array < 7 && !active[drain_curr_systolic_array + 1] && drain_cntr[drain_curr_systolic_array] == 7) begin
+                    next_state = TILE_SETUP;
+                end else if(drain_curr_systolic_array == 7 && d_comp_maxpool_en && drain_cntr[drain_curr_systolic_array] == 1) begin
+                    next_state = TILE_SETUP;
+                end else if(drain_curr_systolic_array == 7 && drain_cntr[drain_curr_systolic_array] == 7) begin
                     next_state = TILE_SETUP;
                 end
             default: next_state = IDLE; // Good practice guardrail
@@ -283,8 +309,6 @@ module computation_overseer #(
         if (!i_rst_n) state <= IDLE;
         else        state <= next_state;
 
-
-    logic [NUM_ARRAYS-1:0] drain_curr_systolic_array; //keeps track of the current sa we're keeping track of.
 
 
     //assign
@@ -437,11 +461,15 @@ module computation_overseer #(
             if(!d_comp_maxpool_en) begin
                 curr_drain_waddr <=  ( ({curr_tile_y, 1'b0} * num_tiles_in_width * 4 + {curr_tile_x, 2'b00}) * ((d_comp_num_kernels +7) >> 3) ) + (kernels_processed >> 3);
             end
+
+            //want to reset drain_cntr here:
+            //drain_cntr <= '0;
             
 
     
         // end else if (state == DRAIN && ~(&i_pop_empty)) begin
-        end else if (state == DRAIN && d_pop_empty != 8'h7f) begin
+        //end else if (state == DRAIN && next_state == DRAIN) begin
+        end else if (state == DRAIN) begin
             //starting over plan: so basically we go to drain after we're done calculating a tile.
             //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
             //so let's see if our active channels logic is correct. 
@@ -569,7 +597,8 @@ module computation_overseer #(
         drain_wen = '0;
 
         // if(state == DRAIN && ~(&i_pop_empty)) begin
-        if(state == DRAIN && (d_pop_empty != 8'h7f)) begin
+        //if(state == DRAIN && next_state == DRAIN) begin
+        if(state == DRAIN) begin
             o_pop_en[drain_curr_systolic_array] = 1;
             drain_wen = 1;
         end
