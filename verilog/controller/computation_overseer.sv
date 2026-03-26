@@ -72,7 +72,7 @@ module computation_overseer #(
 
 
     //from sa_slice - async fifos - need to edit in systolic array slice
-    input logic [NUM_ARRAYS-1:0] i_almost_empty, //2 (max_pool enabled)
+    input logic [NUM_ARRAYS-1:0] i_pop_almost_empty, //2 (max_pool enabled)
     input logic [NUM_ARRAYS-1:0] i_pop_full //8 have all data.
     // input logic [NUM_ARRAYS-1:0] i_rd_empty //async 
 
@@ -81,8 +81,8 @@ module computation_overseer #(
 
 
     //latch in these values into registers because they are already large wires.
-    //logic [NUM_ARRAYS-1:0] d_pop_empty, d_almost_empty, d_pop_full;
-    logic [NUM_ARRAYS-1:0] d_almost_empty, d_pop_full;
+    //logic [NUM_ARRAYS-1:0] d_pop_empty, d_pop_almost_empty, d_pop_full;
+    logic [NUM_ARRAYS-1:0] d_pop_almost_empty, d_pop_full;
 
     //will keep track of the number of writes to each array.
     logic [NUM_ARRAYS-1:0][2:0] drain_cntr;
@@ -285,8 +285,8 @@ module computation_overseer #(
                 //     next_state = DRAIN;
                 // end
                 //now waiting for all the output data to arrive before we move to the drain state
-                // if((d_comp_maxpool_en && (&(~i_almost_empty | ~active))) || (&(i_pop_full | ~active))) begin
-                if ((d_comp_maxpool_en && (&(~d_almost_empty | ~active))) || (&(d_pop_full | ~active))) begin
+                // if((d_comp_maxpool_en && (&(~i_pop_almost_empty | ~active))) || (&(i_pop_full | ~active))) begin
+                if ((d_comp_maxpool_en && (&(~d_pop_almost_empty | ~active))) || (&(d_pop_full | ~active))) begin
                     next_state = DRAIN;
                 end
             DRAIN:
@@ -350,11 +350,19 @@ module computation_overseer #(
             // drain_wdata <= '0; Removed, now handled in pipeline block above 
         //latched in for setup
 
-            d_almost_empty <= '0;
+            d_pop_almost_empty <= '0;
             //d_pop_empty    <= '0;
             d_pop_full     <= '0;
+
+            //signals i'm not resetting:
+            curr_kernel_group <= '0; 
+            num_kernels_per_group <= '0;
+            curr_tile_x <= '0;
+            curr_tile_y <= '0;
+            curr_drain_waddr <= '0;
+
         end else begin
-            d_almost_empty <= i_almost_empty;
+            d_pop_almost_empty <= i_pop_almost_empty;
             //d_pop_empty    <= i_pop_empty;
             d_pop_full     <= i_pop_full;
 
