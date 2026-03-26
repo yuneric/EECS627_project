@@ -65,7 +65,7 @@ module computation_overseer #(
     //TODO: discuss but i'm assuming there's going to be some sort of muxing logic that only sends one set of 64 bits.
     input logic [WORD_SIZE-1:0] i_pop_data,
     output logic [NUM_ARRAYS-1:0] o_pop_en,
-    input logic  [NUM_ARRAYS-1:0] i_pop_empty, 
+    //input logic  [NUM_ARRAYS-1:0] i_pop_empty, 
 
     // misc -we're gonna still use this for now
     output wire [NUM_ARRAYS-1:0] o_array_active,
@@ -81,7 +81,8 @@ module computation_overseer #(
 
 
     //latch in these values into registers because they are already large wires.
-    logic [NUM_ARRAYS-1:0] d_pop_empty, d_almost_empty, d_pop_full;
+    //logic [NUM_ARRAYS-1:0] d_pop_empty, d_almost_empty, d_pop_full;
+    logic [NUM_ARRAYS-1:0] d_almost_empty, d_pop_full;
 
     //will keep track of the number of writes to each array.
     logic [NUM_ARRAYS-1:0][2:0] drain_cntr;
@@ -348,216 +349,225 @@ module computation_overseer #(
             // drain_wen <= '0; //drain_wen is combinationally driven
             // drain_wdata <= '0; Removed, now handled in pipeline block above 
         //latched in for setup
-        end else if (state == IDLE && i_comp_compute_start) begin
-            d_comp_Ho   <= i_comp_Ho;
-            d_comp_Wo   <= i_comp_Wo;
-            d_comp_num_kernels    <= i_comp_num_kernels;
-            d_comp_relu_en  <= i_comp_relu_en;
-            d_comp_maxpool_en <= i_comp_maxpool_en;
-            // tiles_in_width = math.ceil(Wo/4) # how many tiles are in the output width-wise
-            num_tiles_in_width <= (i_comp_Wo + 3) >> 2;
-            // tiles_in_height = math.ceil(Ho/2) # how many tiles are in the output height-wise
-            num_tiles_in_height <= (i_comp_Ho + 1) >> 1;
-            // kernel_groups = math.ceil(Co/(dim*num_arrays)) # how many kernel groups we have to iterate through
-            //we have 8 (2x4) outputs at a time and we have 8 arrays, so the number of groups outside this.
-            num_kernel_groups  <= (i_comp_num_kernels / 64);
 
-            d_comp_scale_amt <= i_comp_scale_amt;
+            d_almost_empty <= '0;
+            //d_pop_empty    <= '0;
+            d_pop_full     <= '0;
+        end else begin
+            d_almost_empty <= i_almost_empty;
+            //d_pop_empty    <= i_pop_empty;
+            d_pop_full     <= i_pop_full;
 
-            //we want to reset kernel's processed because we haven't use it yet. 
-            kernels_processed <= '0;
+            case (state)
+                IDLE: begin
+                    if (i_comp_compute_start) begin
+                        d_comp_Ho   <= i_comp_Ho;
+                        d_comp_Wo   <= i_comp_Wo;
+                        d_comp_num_kernels    <= i_comp_num_kernels;
+                        d_comp_relu_en  <= i_comp_relu_en;
+                        d_comp_maxpool_en <= i_comp_maxpool_en;
+                        // tiles_in_width = math.ceil(Wo/4) # how many tiles are in the output width-wise
+                        num_tiles_in_width <= (i_comp_Wo + 3) >> 2;
+                        // tiles_in_height = math.ceil(Ho/2) # how many tiles are in the output height-wise
+                        num_tiles_in_height <= (i_comp_Ho + 1) >> 1;
+                        // kernel_groups = math.ceil(Co/(dim*num_arrays)) # how many kernel groups we have to iterate through
+                        //we have 8 (2x4) outputs at a time and we have 8 arrays, so the number of groups outside this.
+                        num_kernel_groups  <= (i_comp_num_kernels / 64);
 
-            //want to reset these signals as well:
-            curr_tile_x <= '0;
-            curr_tile_y <= '0;
-            curr_kernel_group <= '0;
-            curr_drain_waddr <= '0;
-           
-            //kernels per group;
-            //if there is 64 or less, then you just have 1 num_kernel_groups
-            //you will set the rest in tile setup
-            //this logic is the setup -> so this should be fine.
-            if(i_comp_num_kernels <= 64) begin
-                num_kernels_per_group <= i_comp_num_kernels;
-                active[0] <= (i_comp_num_kernels > 0);  // Array 0 handles kernels 1-8
-                active[1] <= (i_comp_num_kernels > 8);  // Array 1 handles kernels 9-16
-                active[2] <= (i_comp_num_kernels > 16); // Array 2 handles kernels 17-24
-                active[3] <= (i_comp_num_kernels > 24); // Array 3 handles kernels 25-32
-                active[4] <= (i_comp_num_kernels > 32); // Array 4 handles kernels 33-40
-                active[5] <= (i_comp_num_kernels > 40); // Array 5 handles kernels 41-48
-                active[6] <= (i_comp_num_kernels > 48); // Array 6 handles kernels 49-56
-                active[7] <= (i_comp_num_kernels > 56); // Array 7 handles kernels 57-64
-            end else begin
-                num_kernels_per_group <= 64;
-                active <= '1;
-            end
-        end else if (state == TILE_SETUP) begin 
-            //INCREMENT kernel group
-            //we don't want to increment kernel group all the time.
-            //basically if we're done with all the then we want to reset tile_x and tile_y and move to the next tile.
-            //if curr_tile_x is less than num_tiles_in_width
-            if(curr_tile_x < num_tiles_in_width - 1) begin
-            //else so its at the last index, so we want to reset.
-                curr_tile_x <= curr_tile_x + 1;
-            end else begin
-                //curr tile_x is reset
-                curr_tile_x <= '0;
-                //now we need to increment tile. 
-                if(curr_tile_y < num_tiles_in_height - 1) begin
-                    //increment tile y
-                    curr_tile_y <= curr_tile_y + 1;
-                end else begin 
-                    //we're done with all the tiles so going to increment the kernels processed, update the things that are active etc.
-                    curr_tile_y <= '0;
+                        d_comp_scale_amt <= i_comp_scale_amt;
 
-                    //kernel group is done.
-                    curr_kernel_group <= curr_kernel_group + 1; 
+                        //we want to reset kernel's processed because we haven't use it yet. 
+                        kernels_processed <= '0;
 
-                    //reset curr_drain_waddr to go back where it should be for the first pixel
-                    curr_drain_waddr <= ((kernels_processed + num_kernels_per_group) >> 3);
+                        //want to reset these signals as well:
+                        curr_tile_x <= '0;
+                        curr_tile_y <= '0;
+                        curr_kernel_group <= '0;
+                        curr_drain_waddr <= '0;
+                       
+                        //kernels per group;
+                        //if there is 64 or less, then you just have 1 num_kernel_groups
+                        //you will set the rest in tile setup
+                        //this logic is the setup -> so this should be fine.
+                        if(i_comp_num_kernels <= 64) begin
+                            num_kernels_per_group <= i_comp_num_kernels;
+                            active[0] <= (i_comp_num_kernels > 0);  // Array 0 handles kernels 1-8
+                            active[1] <= (i_comp_num_kernels > 8);  // Array 1 handles kernels 9-16
+                            active[2] <= (i_comp_num_kernels > 16); // Array 2 handles kernels 17-24
+                            active[3] <= (i_comp_num_kernels > 24); // Array 3 handles kernels 25-32
+                            active[4] <= (i_comp_num_kernels > 32); // Array 4 handles kernels 33-40
+                            active[5] <= (i_comp_num_kernels > 40); // Array 5 handles kernels 41-48
+                            active[6] <= (i_comp_num_kernels > 48); // Array 6 handles kernels 49-56
+                            active[7] <= (i_comp_num_kernels > 56); // Array 7 handles kernels 57-64
+                        end else begin
+                            num_kernels_per_group <= 64;
+                            active <= '1;
+                        end
+                    end
+                end 
 
-                    //need to reset curr_sa.
-                    drain_curr_systolic_array <= '0;
-
-                    //update kernels processed and active
-                    kernels_processed <= kernels_processed + num_kernels_per_group; 
-
-                    if((d_comp_num_kernels - (kernels_processed + num_kernels_per_group)) <= 64) begin
-                        num_kernels_per_group <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group));
-                        active[0] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 0);  // Array 0 handles kernels 1-8
-                        active[1] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 8);  // Array 1 handles kernels 9-16
-                        active[2] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 16); // Array 2 handles kernels 17-24
-                        active[3] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 24); // Array 3 handles kernels 25-32
-                        active[4] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 32); // Array 4 handles kernels 33-40
-                        active[5] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 40); // Array 5 handles kernels 41-48
-                        active[6] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 48); // Array 6 handles kernels 49-56
-                        active[7] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 56); // Array 7 handles kernels 57-64
+                TILE_SETUP: begin 
+                    //INCREMENT kernel group
+                    //we don't want to increment kernel group all the time.
+                    //basically if we're done with all the then we want to reset tile_x and tile_y and move to the next tile.
+                    //if curr_tile_x is less than num_tiles_in_width
+                    if(curr_tile_x < num_tiles_in_width - 1) begin
+                    //else so its at the last index, so we want to reset.
+                        curr_tile_x <= curr_tile_x + 1;
                     end else begin
-                        num_kernels_per_group <= 64;
-                        active <= '1;
+                        //curr tile_x is reset
+                        curr_tile_x <= '0;
+                        //now we need to increment tile. 
+                        if(curr_tile_y < num_tiles_in_height - 1) begin
+                            //increment tile y
+                            curr_tile_y <= curr_tile_y + 1;
+                        end else begin 
+                            //we're done with all the tiles so going to increment the kernels processed, update the things that are active etc.
+                            curr_tile_y <= '0;
+
+                            //kernel group is done.
+                            curr_kernel_group <= curr_kernel_group + 1; 
+
+                            //reset curr_drain_waddr to go back where it should be for the first pixel
+                            curr_drain_waddr <= ((kernels_processed + num_kernels_per_group) >> 3);
+
+                            //need to reset curr_sa.
+                            drain_curr_systolic_array <= '0;
+
+                            //update kernels processed and active
+                            kernels_processed <= kernels_processed + num_kernels_per_group; 
+
+                            if((d_comp_num_kernels - (kernels_processed + num_kernels_per_group)) <= 64) begin
+                                num_kernels_per_group <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group));
+                                active[0] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 0);  // Array 0 handles kernels 1-8
+                                active[1] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 8);  // Array 1 handles kernels 9-16
+                                active[2] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 16); // Array 2 handles kernels 17-24
+                                active[3] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 24); // Array 3 handles kernels 25-32
+                                active[4] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 32); // Array 4 handles kernels 33-40
+                                active[5] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 40); // Array 5 handles kernels 41-48
+                                active[6] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 48); // Array 6 handles kernels 49-56
+                                active[7] <= (d_comp_num_kernels - (kernels_processed + num_kernels_per_group) > 56); // Array 7 handles kernels 57-64
+                            end else begin
+                                num_kernels_per_group <= 64;
+                                active <= '1;
+                            end
+                        end
+                    end   
+                end 
+
+                WAIT_FOR_DRAIN: begin 
+                    //reset these signals
+                    drain_curr_systolic_array <= '0; //keeps track of the current sa we're keeping track of.
+
+                    //want to setup the output pixels for reconstruction
+                    //this gives you the top left pixel.
+                    //if(d_comp_maxpool_en) begin
+                        // //output pixels are 1 x 2. 
+                        // //x2
+                        // output_pixel_x <= {curr_tile_x, 2'b0};
+                        // //x1
+                        // output_pixel_y <= curr_tile_y;
+                    // end else begin
+                        //x4
+                        output_pixel_x <= {curr_tile_x, 2'b00};
+                        //x2
+                        output_pixel_y <= {curr_tile_y, 1'b0};
+                    // end
+
+                    //want to reset if we go back to top row for not max_pool_en.
+                    //else you want to keep -> this decides if we go back up or to the next row.
+                    if(!d_comp_maxpool_en) begin
+                        curr_drain_waddr <=  ( ({curr_tile_y, 1'b0} * num_tiles_in_width * 4 + {curr_tile_x, 2'b00}) * ((d_comp_num_kernels +7) >> 3) ) + (kernels_processed >> 3);
+                    end
+
+                    //want to reset drain_cntr here:
+                    //drain_cntr <= '0;
+                end 
+
+                DRAIN: begin
+                    //starting over plan: so basically we go to drain after we're done calculating a tile.
+                    //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
+                    //so let's see if our active channels logic is correct. 
+
+                    //okay fixed that.
+                    //so for drain -> we go through each systolic array -> get the channels for one pixel, then get the next pixel.
+                    //if the kernel's processed is not the end, then you need to incorporate a stride which you could do using num_kernels_group.
+
+
+                    //you need to keep track of write_addr to mem_if which we have. 
+                    //we have drain_curr_systolic_array to do that -> when we're cycling back to systolic array 0, that's when we want to add in the stride.
+                    /* input logic [WORD_SIZE-1:0] o_pop_data,
+                    output logic [NUM_ARRAYS-1:0] o_pop_en,
+                    input logic  [NUM_ARRAYS-1:0] i_pop_empty*/
+
+                    //we basically want to pipeline pop_en, and then writing to output mem_if a cycle later [MEM_IF_ADDR_WIDTH-1:0] o_comp_waddr, //write the drain data to mem_if
+                    //output   o_comp_wen, //write enable
+                    //output  [WORD_SIZE-1:0] o_comp_wdata, //the 64-bit data written from the drain
+                    //ok let's thing about all the signals we'd need.
+
+                    //kernels_processed will tell you the stride; you could backtrack your written address to it when you start a new_kernel group; other wise you just want to keep incrementing. 
+                    //okay so when you get through all of the thigs in the second current group first pixel, then you would have to do, what's left + kernel's processed to get to the next pixel.
+                    //so you want to reset address to what you want it to be above. 
+
+                    //okay the first thing that is very simple to do is incerement drain_curr_systolic_array
+                    //if the next thing is active, then 
+                    if(drain_curr_systolic_array < 7 && active[drain_curr_systolic_array + 1]) begin
+                        drain_curr_systolic_array <= drain_curr_systolic_array + 1; 
+                        //increment mem_if address by 1.
+                        curr_drain_waddr <= curr_drain_waddr + 1;
+                    //else you want to circle back to the front.
+                    end else begin
+                        drain_curr_systolic_array <= '0;
+                        
+                        //when we circle back to the front we want to check the stride because we're moving to a new pixel.
+                        
+                        //at this point we're moving onto the next pixel, so have to calculate stride
+                        //increment mem_if address by 1.
+                        //we want to increment the addrss to be current address + the remaining kernels.
+                        //this is when we want to switch to a new pixel.
+                        //curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
+                        //okay let's think about this. 
+                        //so in the case there is max pooling, it would just be two tiles in order.
+                        //if we do this math; it would start doing the strides. 
+                        //you have to update the pixel here too.
+                        if(d_comp_maxpool_en) begin
+                            curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group + 7) >> 3) + 1;
+                        end else begin
+                            curr_drain_waddr <=  ( (next_pixel_y * num_tiles_in_width * 4 + next_pixel_x) * ((d_comp_num_kernels + 7) >> 3) ) + (kernels_processed >> 3);
+                        end
+
+                        // //then you want to change the pixel.
+                        // if(d_comp_maxpool_en) begin
+                        //     // Maxpool tiles are 1x2 (Width is 2)
+                        //     // Check if we haven't reached the end of the current tile's row
+                        //     if(output_pixel_x < ({curr_tile_x, 2'b0} + 1)) begin 
+                        //         output_pixel_x <= output_pixel_x + 1;
+                        //     end else begin
+                        //         // Reset X to the start of the CURRENT tile
+                        //         output_pixel_x <= {curr_tile_x, 2'b0};
+                        //         // Move Y to the next row
+                        //         output_pixel_y <= output_pixel_y + 1;
+                        //     end
+                        // end else begin
+                        //     // Standard tiles are 2x4 (Width is 4)
+                        //     // Use your x_bound to handle edge cases properly!
+                        //     if(output_pixel_x < ({curr_tile_x, 2'b00} + 3)) begin
+                        //         output_pixel_x <= output_pixel_x + 1;
+                        //     end else begin
+                        //         // Reset X to the start of the CURRENT tile
+                        //         output_pixel_x <= {curr_tile_x, 2'b00};
+                        //         // Move Y to the next row
+                        //         output_pixel_y <= output_pixel_y + 1;
+                        //     end
+                        // end
+
+                        //next output pixel being set.
+                        output_pixel_x <= next_pixel_x;
+                        output_pixel_y <= next_pixel_y;
                     end
                 end
-            end   
-        end else if (state == WAIT_FOR_DRAIN) begin 
-            //reset these signals
-            drain_curr_systolic_array <= '0; //keeps track of the current sa we're keeping track of.
-
-            //want to setup the output pixels for reconstruction
-            //this gives you the top left pixel.
-            //if(d_comp_maxpool_en) begin
-                // //output pixels are 1 x 2. 
-                // //x2
-                // output_pixel_x <= {curr_tile_x, 2'b0};
-                // //x1
-                // output_pixel_y <= curr_tile_y;
-            // end else begin
-                //x4
-                output_pixel_x <= {curr_tile_x, 2'b00};
-                //x2
-                output_pixel_y <= {curr_tile_y, 1'b0};
-            // end
-
-            //want to reset if we go back to top row for not max_pool_en.
-            //else you want to keep -> this decides if we go back up or to the next row.
-            if(!d_comp_maxpool_en) begin
-                curr_drain_waddr <=  ( ({curr_tile_y, 1'b0} * num_tiles_in_width * 4 + {curr_tile_x, 2'b00}) * ((d_comp_num_kernels +7) >> 3) ) + (kernels_processed >> 3);
-            end
-
-            //want to reset drain_cntr here:
-            //drain_cntr <= '0;
-            
-
-    
-        // end else if (state == DRAIN && ~(&i_pop_empty)) begin
-        //end else if (state == DRAIN && next_state == DRAIN) begin
-        end else if (state == DRAIN) begin
-            //starting over plan: so basically we go to drain after we're done calculating a tile.
-            //so basically we do 64 channels for the tile and we do all the tiles, then we do the next 64 channels
-            //so let's see if our active channels logic is correct. 
-
-            //okay fixed that.
-            //so for drain -> we go through each systolic array -> get the channels for one pixel, then get the next pixel.
-            //if the kernel's processed is not the end, then you need to incorporate a stride which you could do using num_kernels_group.
-
-
-            //you need to keep track of write_addr to mem_if which we have. 
-            //we have drain_curr_systolic_array to do that -> when we're cycling back to systolic array 0, that's when we want to add in the stride.
-            /* input logic [WORD_SIZE-1:0] o_pop_data,
-            output logic [NUM_ARRAYS-1:0] o_pop_en,
-            input logic  [NUM_ARRAYS-1:0] i_pop_empty*/
-
-            //we basically want to pipeline pop_en, and then writing to output mem_if a cycle later [MEM_IF_ADDR_WIDTH-1:0] o_comp_waddr, //write the drain data to mem_if
-            //output   o_comp_wen, //write enable
-            //output  [WORD_SIZE-1:0] o_comp_wdata, //the 64-bit data written from the drain
-            //ok let's thing about all the signals we'd need.
-
-            //kernels_processed will tell you the stride; you could backtrack your written address to it when you start a new_kernel group; other wise you just want to keep incrementing. 
-            //okay so when you get through all of the thigs in the second current group first pixel, then you would have to do, what's left + kernel's processed to get to the next pixel.
-            //so you want to reset address to what you want it to be above. 
-
-            //okay the first thing that is very simple to do is incerement drain_curr_systolic_array
-            //if the next thing is active, then 
-            if(drain_curr_systolic_array < 7 && active[drain_curr_systolic_array + 1]) begin
-                drain_curr_systolic_array <= drain_curr_systolic_array + 1; 
-                //increment mem_if address by 1.
-                curr_drain_waddr <= curr_drain_waddr + 1;
-            //else you want to circle back to the front.
-            end else begin
-                drain_curr_systolic_array <= '0;
-                
-                //when we circle back to the front we want to check the stride because we're moving to a new pixel.
-                
-                //at this point we're moving onto the next pixel, so have to calculate stride
-                //increment mem_if address by 1.
-                //we want to increment the addrss to be current address + the remaining kernels.
-                //this is when we want to switch to a new pixel.
-                //curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group) >> 3) + 1;
-                //okay let's think about this. 
-                //so in the case there is max pooling, it would just be two tiles in order.
-                //if we do this math; it would start doing the strides. 
-                //you have to update the pixel here too.
-                if(d_comp_maxpool_en) begin
-                    curr_drain_waddr <= curr_drain_waddr + ((d_comp_num_kernels - num_kernels_per_group + 7) >> 3) + 1;
-                end else begin
-                    curr_drain_waddr <=  ( (next_pixel_y * num_tiles_in_width * 4 + next_pixel_x) * ((d_comp_num_kernels + 7) >> 3) ) + (kernels_processed >> 3);
-                end
-
-                // //then you want to change the pixel.
-                // if(d_comp_maxpool_en) begin
-                //     // Maxpool tiles are 1x2 (Width is 2)
-                //     // Check if we haven't reached the end of the current tile's row
-                //     if(output_pixel_x < ({curr_tile_x, 2'b0} + 1)) begin 
-                //         output_pixel_x <= output_pixel_x + 1;
-                //     end else begin
-                //         // Reset X to the start of the CURRENT tile
-                //         output_pixel_x <= {curr_tile_x, 2'b0};
-                //         // Move Y to the next row
-                //         output_pixel_y <= output_pixel_y + 1;
-                //     end
-                // end else begin
-                //     // Standard tiles are 2x4 (Width is 4)
-                //     // Use your x_bound to handle edge cases properly!
-                //     if(output_pixel_x < ({curr_tile_x, 2'b00} + 3)) begin
-                //         output_pixel_x <= output_pixel_x + 1;
-                //     end else begin
-                //         // Reset X to the start of the CURRENT tile
-                //         output_pixel_x <= {curr_tile_x, 2'b00};
-                //         // Move Y to the next row
-                //         output_pixel_y <= output_pixel_y + 1;
-                //     end
-                // end
-
-                //next output pixel being set.
-                output_pixel_x <= next_pixel_x;
-                output_pixel_y <= next_pixel_y;
-            end
-  
+            endcase
         end
-
-        //latch in regardless.
-        d_almost_empty <= i_almost_empty;
-        d_pop_empty <= i_pop_empty;
-        d_pop_full <= i_pop_full;
     end
 
     // logic [DIM_WIDTH-1:0] next_pixel_x, next_pixel_y;
