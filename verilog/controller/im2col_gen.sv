@@ -16,7 +16,7 @@ module im2col_gen #(
     input  [1:0]                   i_cfg_padding,        // zero padding amount
     input  [DIM_WIDTH-1:0]         i_cfg_words_ci,       // ceil(Ci / values_per_word)
     input  [DIM_WIDTH-1:0]         i_cfg_curr_kernel_group, // the current kernel group that we are on
-    input  [7:0]                   i_cfg_num_kernels_per_group, // kernels in this group (max 64)
+    input  [DIM_WIDTH-1:0]         i_cfg_num_kernels_per_group, // kernels in this group (max 64)
 
     input  [DIM_WIDTH-1:0]         i_cfg_sub_tile_x,     // output col / 4
     input  [DIM_WIDTH-1:0]         i_cfg_sub_tile_y,     // output row / 2

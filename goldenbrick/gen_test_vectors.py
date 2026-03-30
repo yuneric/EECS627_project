@@ -86,7 +86,8 @@ def generate_simple_test_case(test_id, dim, data_len, act_range, weight_range,
         # Drain order (reversed rows) goes into maxpool.
         # Maxpool collects dim/2 rows into buf0, dim/2 into buf1, then 2x2 max.
         # The drain-order rows entering maxpool are: C_scaled[dim-1], C_scaled[dim-2], ..., C_scaled[0]
-        drain_order = C_scaled[::-1, :]  # reversed row order
+        #drain_order = C_scaled[::-1, :]  # reversed row order
+        drain_order = C_scaled
         buf0 = drain_order[:dim//2, :]
         buf1 = drain_order[dim//2:, :]
         n_out = dim // 4
@@ -102,7 +103,8 @@ def generate_simple_test_case(test_id, dim, data_len, act_range, weight_range,
     else:
         # No maxpool: output is in drain order (reversed).
         # TB captures in drain order, so golden should match drain order.
-        golden_out = C_scaled[::-1, :]
+        #golden_out = C_scaled[::-1, :]
+        golden_out = C_scaled
         num_output_rows = dim
 
     # --- Write stimulus files ---
@@ -127,7 +129,8 @@ def generate_simple_test_case(test_id, dim, data_len, act_range, weight_range,
 
     # Raw psum golden (drain order = reversed rows) for array-only debug
     with open(f"{prefix}_psum_golden.hex", 'w') as f:
-        for r in range(dim - 1, -1, -1):
+        #for r in range(dim - 1, -1, -1):
+        for r in range(0, dim, 1):
             C_row = np.matmul(A, W)[r, :].astype(np.int64)
             f.write(pack_vector_hex(C_row, 32) + '\n')
 
@@ -199,7 +202,8 @@ def generate_test_case(test_id, dim, data_len, act_range, weight_range,
         # Drain order (reversed rows) goes into maxpool.
         # Maxpool collects dim/2 rows into buf0, dim/2 into buf1, then 2x2 max.
         # The drain-order rows entering maxpool are: C_scaled[dim-1], C_scaled[dim-2], ..., C_scaled[0]
-        drain_order = C_scaled[::-1, :]  # reversed row order
+        #drain_order = C_scaled[::-1, :]  # reversed row order
+        drain_order = C_scaled
         buf0 = drain_order[:dim//2, :]
         buf1 = drain_order[dim//2:, :]
         n_out = dim // 4
@@ -215,7 +219,8 @@ def generate_test_case(test_id, dim, data_len, act_range, weight_range,
     else:
         # No maxpool: output is in drain order (reversed).
         # TB captures in drain order, so golden should match drain order.
-        golden_out = C_scaled[::-1, :]
+        #golden_out = C_scaled[::-1, :]
+        golden_out = C_scaled
         num_output_rows = dim
 
     # --- Write stimulus files ---
@@ -240,7 +245,8 @@ def generate_test_case(test_id, dim, data_len, act_range, weight_range,
 
     # Raw psum golden (drain order = reversed rows) for array-only debug
     with open(f"{prefix}_psum_golden.hex", 'w') as f:
-        for r in range(dim - 1, -1, -1):
+        #for r in range(dim - 1, -1, -1):
+        for r in range(0, dim, 1):
             C_row = np.matmul(A, W)[r, :].astype(np.int64)
             f.write(pack_vector_hex(C_row, 32) + '\n')
 

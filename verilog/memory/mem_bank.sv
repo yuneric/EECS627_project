@@ -18,23 +18,42 @@ module mem_bank #(
 
 );
 
+    logic                  s0_cen  ; 
+    logic                  s0_wen  ;
+    logic [ADDR_WIDTH-1:0] s0_addr ;
+    logic [DATA_WIDTH-1:0] s0_wdata;
+
+    logic                  s1_cen  ; 
+    logic                  s1_wen  ;
+    logic [ADDR_WIDTH-1:0] s1_addr ;
+    logic [DATA_WIDTH-1:0] s1_wdata;
+
+    assign #1.5 s0_cen   = i_s0_cen  ; 
+    assign #1.5 s0_wen   = i_s0_wen  ;
+    assign #1.5 s0_addr  = i_s0_addr ;
+    assign #1.5 s0_wdata = i_s0_wdata;
+
+    assign #1.5 s1_cen   = i_s1_cen  ; 
+    assign #1.5 s1_wen   = i_s1_wen  ;
+    assign #1.5 s1_addr  = i_s1_addr ;
+    assign #1.5 s1_wdata = i_s1_wdata;
 
 sp4096x64m8 sram0 (
                 .CLK(i_clk),
-                .CEN(i_s0_cen),
-                .WEN(i_s0_wen),
+                .CEN(s0_cen),
+                .WEN(s0_wen),
                 .Q(o_s0_rdata),
-                .A(i_s0_addr),
-                .D(i_s0_wdata)
+                .A(s0_addr),
+                .D(s0_wdata)
                 );
 
 
 sp4096x64m8 sram1 (
                 .CLK(i_clk),
-                .CEN(i_s1_cen),
-                .WEN(i_s1_wen),
+                .CEN(s1_cen),
+                .WEN(s1_wen),
                 .Q(o_s1_rdata),
-                .A(i_s1_addr),
-                .D(i_s1_wdata)
+                .A(s1_addr),
+                .D(s1_wdata)
                 );
 endmodule

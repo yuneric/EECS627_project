@@ -55,7 +55,7 @@ module computation_overseer_tb;
     logic [NUM_ARRAYS-1:0]          pop_en;
     logic [NUM_ARRAYS-1:0]          pop_empty;
     logic [NUM_ARRAYS-1:0]          almost_empty;
-    logic [NUM_ARRAYS-1:0]          rd_full;
+    logic [NUM_ARRAYS-1:0]          pop_full;
     // logic [DIM-1:0]                 rd_empty;
 
 
@@ -103,10 +103,10 @@ module computation_overseer_tb;
         .o_wt_sram_rd_en(wt_sram_rd_en),
         .i_pop_data(pop_data),
         .o_pop_en(pop_en),
-        .i_pop_empty(pop_empty),
+        //.i_pop_empty(pop_empty),
         .o_array_active(array_active),
-        .i_almost_empty(almost_empty),
-        .i_rd_full(rd_full)
+        .i_pop_almost_empty(almost_empty),
+        .i_pop_full(pop_full)
         // .i_rd_empty(rd_empty)
     );
 
@@ -115,25 +115,25 @@ module computation_overseer_tb;
     // To be accurate to the real fifos, sa_fifos holds all the data, and presents data at its output
     // pop is asserted to consume that data and load the next bit of data
     // DATA IN COMP OVERSEER SHOULD BE LATCHED IN THE POSEDGE AFTER IT ASSERTS POP_EN
-    logic [(WORD_SIZE+WT_ADDR_WIDTH)-1:0]  sa_fifos [DIM] [$]; 
+    logic [(WORD_SIZE+MEM_IF_ADDR_WIDTH)-1:0]  sa_fifos [DIM] [$]; 
 
     // these queues are used to check that data is going to the right place
     logic [WORD_SIZE-1:0]               wr_data_queue [$]; 
-    logic [WT_ADDR_WIDTH-1:0]           wr_addr_queue [$]; 
+    logic [MEM_IF_ADDR_WIDTH-1:0]           wr_addr_queue [$]; 
     
     // logic [(WORD_SIZE+WT_ADDR_WIDTH)-1:0]           sa_fifo_output [NUM_ARRAYS-1:0]; 
-    logic [(WORD_SIZE+WT_ADDR_WIDTH)-1:0]           pop_data_full;
-    logic [WT_ADDR_WIDTH-1:0]                       pop_dst_addr;
+    logic [(WORD_SIZE+MEM_IF_ADDR_WIDTH)-1:0]           pop_data_full;
+    logic [MEM_IF_ADDR_WIDTH-1:0]                       pop_dst_addr;
 
     //FIFO Status
     // logic [NUM_ARRAYS-1:0]                 pop_empty_neg;
     // logic [NUM_ARRAYS-1:0]                 almost_empty_neg;
-    // logic [NUM_ARRAYS-1:0]                 rd_full_neg;
+    // logic [NUM_ARRAYS-1:0]                 pop_full_neg;
     // always_comb begin
     //     for (int i = 0; i < DIM; i++) begin
     //         pop_empty_neg[i]    = (sa_fifos[i].size() == 0);
     //         almost_empty_neg[i] = (sa_fifos[i].size() < 2);
-    //         rd_full_neg[i]      = (sa_fifos[i].size() >= 8); 
+    //         pop_full_neg[i]      = (sa_fifos[i].size() >= 8); 
     //     end
     // end
     // Sync fifo flags with posedge of clk
@@ -141,7 +141,7 @@ module computation_overseer_tb;
         for (int i = 0; i < DIM; i++) begin
             pop_empty[i]       <= (sa_fifos[i].size() == 0);        
             almost_empty[i]    <= (sa_fifos[i].size() < 2);
-            rd_full[i]         <= (sa_fifos[i].size() >= 8);  
+            pop_full[i]         <= (sa_fifos[i].size() >= 8);  
         end
     end
 
@@ -156,13 +156,18 @@ module computation_overseer_tb;
         end
     end
 
-    assign pop_data = pop_data_full[74:11];
-    assign pop_dst_addr = pop_data_full[10:0];
+    assign pop_data = pop_data_full[75:12];
+    assign pop_dst_addr = pop_data_full[11:0];
 
+
+    // Error checking
+    int num_tests_failed;
+    int num_errors;
+    int num_addr_mismatch;
 
     // Here we do our writeback checks for every write
     logic [WORD_SIZE-1:0] correct_data;
-    logic [WT_ADDR_WIDTH-1:0] correct_dst_addr;
+    logic [MEM_IF_ADDR_WIDTH-1:0] correct_dst_addr;
     always @(posedge clk) begin
         // Add data to writeback queue when we pop from fifos (this data should appear in order at comp overseer output)
         if(|pop_en) begin
@@ -175,10 +180,11 @@ module computation_overseer_tb;
             correct_data = wr_data_queue.pop_front();
             correct_dst_addr = wr_addr_queue.pop_front();
             if(correct_dst_addr != comp_waddr) begin
-                $display("wb ERROR: addr mismatch act: %h exp: %h", comp_waddr, correct_dst_addr);
+                $display("wb ERROR: addr mismatch act: %d exp: %d", comp_waddr, correct_dst_addr);
+                num_addr_mismatch += 1;
             end
             if(correct_data != comp_wdata) begin
-                $display("wb ERROR: data mismatch act: %h exp: %h", comp_wdata, correct_data);
+                $display("wb ERROR: data mismatch act: %d exp: %d", comp_wdata, correct_data);
             end
         end
     end
@@ -197,10 +203,6 @@ module computation_overseer_tb;
     // --- File Readers & Parsers ---
     integer stim_fd;
     integer expect_fd;
-
-    // Error checking
-    int num_tests_failed;
-    int num_errors;
     
     // Parsing variables
     int test;
@@ -211,7 +213,7 @@ module computation_overseer_tb;
     logic [DIM_WIDTH-1:0]       x;
     logic [DIM_WIDTH-1:0]       ch_start;
     logic                       valid_ch;
-    logic [WT_ADDR_WIDTH-1:0]   dst_addr;
+    logic [MEM_IF_ADDR_WIDTH-1:0]   dst_addr;
 
     // Looping variables
     int lines_per_tile;
@@ -220,7 +222,16 @@ module computation_overseer_tb;
     integer tiles_x;
     integer tiles_y;
     integer num_drains;
+    int num_words_per_Co; 
 
+    //dump file
+    initial begin
+        $fsdbDumpfile("computation_overseer_tb.fsdb");
+        $fsdbDumpvars(0, computation_overseer_tb, "+all");
+        `ifdef SYN
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/computation_overseer/computation_overseer.syn.sdf", computation_overseer_tb.dut);
+        `endif
+    end
 
     initial begin
         rst_n = 1;
@@ -251,6 +262,7 @@ module computation_overseer_tb;
         while(!$feof(stim_fd)) begin
             // Reset vars
             num_errors = 0;
+            num_addr_mismatch = 0;
             num_writes = 0;
             for(int i = 0; i < 4096; i +=1 ) begin
                 comp_over_out[i] = '0;
@@ -258,7 +270,20 @@ module computation_overseer_tb;
             end
 
             // Check the header
-            $fscanf(stim_fd, "test: %h comp_Hi: %h comp_Wi: %h comp_Hf: %h comp_Wf: %h comp_Ho: %h comp_Wo: %h comp_words_per_channel: %h comp_num_kernels: %h comp_stride: %b comp_padding: %b comp_maxpool_en: %b",
+            $fscanf(stim_fd, "test: %d comp_Hi: %h comp_Wi: %h comp_Hf: %h comp_Wf: %h comp_Ho: %h comp_Wo: %h comp_words_per_channel: %h comp_num_kernels: %h comp_stride: %b comp_padding: %b comp_maxpool_en: %b",
+                    test,
+                    comp_Hi,
+                    comp_Wi,
+                    comp_Hf,
+                    comp_Wf,
+                    comp_Ho,
+                    comp_Wo,
+                    comp_words_per_channel,
+                    comp_num_kernels,
+                    comp_stride,
+                    comp_padding,
+                    comp_maxpool_en);
+            $display("test: %0d comp_Hi: %h comp_Wi: %h comp_Hf: %h comp_Wf: %h comp_Ho: %h comp_Wo: %h comp_words_per_channel: %h comp_num_kernels: %h comp_stride: %b comp_padding: %b comp_maxpool_en: %b",
                     test,
                     comp_Hi,
                     comp_Wi,
@@ -274,17 +299,19 @@ module computation_overseer_tb;
             $display("Test: %0d", test);
 
             // Account for our 2x4 tiling
-            real_Ho = comp_Ho + (2 - comp_Ho % 2);
-            real_Wo = comp_Wo + (4 - comp_Wo % 4);
+            real_Wo = ((comp_Wo + 3) >> 2) << 2;
+            real_Ho = ((comp_Ho + 1) >> 1) << 1;
             if(comp_maxpool_en) begin
                 real_Ho = real_Ho / 2;
                 real_Wo = real_Wo / 2;
             end
-            //$display("Original: %dx%d, After Tiling: %dx%d", comp_Ho, comp_Wo, real_Ho, real_Wo);
+            $display("Original: %0dx%0d, After Tiling & Maxpool: %0dx%0d", comp_Ho, comp_Wo, real_Ho, real_Wo);
 
             // Read in the golden output
-            num_golden_lines = real_Ho * real_Wo;
-            $fscanf(expect_fd, "test: %h x y ch_start addrh\n", test);
+            num_words_per_Co = ((comp_num_kernels-1) >> 3) + 1;
+            $display("num_words_per_Co: %0d", num_words_per_Co);
+            num_golden_lines = real_Ho * real_Wo * num_words_per_Co;
+            $fscanf(expect_fd, "test: %d x y ch_start addrh\n", test);
             for(int i = 0; i < num_golden_lines; i += 1) begin
                 $fscanf(expect_fd, "%h %h %h %h %h\n", golden_out[i], tmp1, tmp2, tmp3, tmp4);
             end
@@ -294,8 +321,8 @@ module computation_overseer_tb;
             if(comp_num_kernels % 64 > 0) begin
                 kernel_groups += 1;
             end
-            tiles_x = real_Wo / 4;
-            tiles_y = real_Ho / 2;
+            tiles_x = (comp_Wo + 3) >> 2;
+            tiles_y = (comp_Ho + 1) >> 1;
             num_drains = tiles_x * tiles_y * kernel_groups;
             $display("kernel_groups: %0d", kernel_groups);
             $display("tiles_x: %0d", tiles_x);
@@ -303,6 +330,7 @@ module computation_overseer_tb;
             $display("num_drains: %0d", num_drains);
 
             // Start our computation !!!!!
+            repeat (100) @(posedge clk);
             @(negedge clk);
             comp_compute_start = 1;
             @(negedge clk);
@@ -314,7 +342,7 @@ module computation_overseer_tb;
                 lines_per_tile = 2;
             end
             for(int drain = 0; drain < num_drains; drain += 1) begin
-                repeat (20) @(posedge clk);
+                //repeat (20) @(posedge clk);
                 for(int array = 0; array < 8; array += 1) begin
                     for(int line = 0; line < lines_per_tile; line += 1) begin
                         $fscanf(stim_fd, "%h %h %h %h %b %h\n", fifo_data, x, y, ch_start, valid_ch, dst_addr);
@@ -330,11 +358,16 @@ module computation_overseer_tb;
                 end
 
                 // Now that weve loaded this tile of data, wait for it to drain
-                $display("Waiting for im2col...");
+                $display("%t Waiting for im2col...", $time);
                 wait(data_last);
                 $display("Waiting for drain...");
-                wait(&pop_empty);
+                // wait(&pop_empty);
+                @(negedge comp_wen);
+
+                //repeat (20) @(posedge clk);
             end
+            // Let the data egress
+            repeat (20) @(posedge clk);
 
             // --- Final Grading ---
             $display("Comparing Outputs");
@@ -345,14 +378,14 @@ module computation_overseer_tb;
                     $display("act: %h exp: %h", comp_over_out[word], golden_out[word]);
                 end
             end
-            if ((num_errors == 0) && (num_writes == num_golden_lines)) begin
+            if ((num_errors == 0) && (num_writes == num_golden_lines) && (num_addr_mismatch == 0)) begin
                 $display("========================================");
                 $display("TEST %0d PASSED! ALL DRAIN WRITES MATCH!", test);
                 $display("========================================");
             end else begin
                 num_tests_failed += 1;
                 $display("========================================");
-                $display("TEST %0d FAILED WITH %0d MISMATCHES.", test, num_errors);
+                $display("TEST %0d FAILED WITH %0d DATA MISMATCHES & %0d ADDR MISMATCHES.", test, num_errors, num_addr_mismatch);
                 $display("Num Writes act: %0d exp: %0d", num_writes, num_golden_lines);
                 $display("========================================");
             end
@@ -372,7 +405,7 @@ module computation_overseer_tb;
 
     // Timeout failsafe
     initial begin
-        #500000;
+        #500000000;
         $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end

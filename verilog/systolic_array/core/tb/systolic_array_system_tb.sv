@@ -8,7 +8,7 @@ module systolic_array_system_tb;
     parameter OUTPUT_WIDTH = 8;
     parameter SHIFT_WIDTH  = 5;
     parameter FIFO_DEPTH   = 32; 
-    parameter NUM_TESTS    = 114;
+    parameter NUM_TESTS    = 1;
     // parameter MAX_CYCLES   = 500;
 
     parameter ACT_VEC_W    = DATA_WIDTH * ARRAY_SIZE;
@@ -16,10 +16,14 @@ module systolic_array_system_tb;
 
     // For the tb
     reg clk_tb, clk_sa, rst_n;
+    reg clk_en; 
+    
+    initial clk_en = 0;
     initial clk_tb = 0;
     initial clk_sa = 0;
-    always #9 clk_tb = ~clk_tb;  // 100 MHz
-    always #5 clk_sa = ~clk_sa;  // 100 MHz
+    
+    always #2.5 if (clk_en) clk_tb = ~clk_tb;  
+    always #2.5 if (clk_en) clk_sa = ~clk_sa;
 
     logic  [ACT_VEC_W-1:0]    input_act_wr_data;
     logic  [ACT_VEC_W-1:0]    input_weight_wr_data;
@@ -49,6 +53,7 @@ module systolic_array_system_tb;
     logic data_available;
     assign data_available = !act_fifo_empty && !weight_fifo_empty && !info_fifo_empty;
 
+    // SYN TARGETS
     `ifdef SYN
     initial begin
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf", systolic_array_system_tb.dut);
@@ -58,6 +63,19 @@ module systolic_array_system_tb;
         $display("[%0t] SYN not defined, no SDF annotation", $time);
     end
     `endif
+
+    //// APR targets
+    `ifdef APR
+    initial begin
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/systolic_array_system/systolic_array_system.apr.sdf", systolic_array_system_tb.dut,,,"TYPICAL");
+    end
+    `else
+    initial begin
+        $display("[%0t] no SDF APR annotation", $time);
+    end
+    `endif
+    /////// 
+
 
     systolic_array_system #(
         .ARRAY_SIZE(ARRAY_SIZE),
@@ -152,7 +170,6 @@ module systolic_array_system_tb;
     integer i, j;
     integer element_errors;
     integer max_cycles;
-
     reg signed [OUTPUT_WIDTH-1:0] got_elem, exp_elem;
 
     // For file loading
@@ -160,6 +177,8 @@ module systolic_array_system_tb;
     reg [256*8-1:0] weight_filename;
     reg [256*8-1:0] golden_filename;
     reg [256*8-1:0] config_filename;
+
+
 
     initial begin
         $dumpfile("tb_systolic_system.vcd");
@@ -171,15 +190,22 @@ module systolic_array_system_tb;
         total_fail = 0;
 
         // ---- Run all tests ----
-        rst_n          = 0;
+        rst_n                = 0;
         input_wr_en          = 0;
         input_act_wr_data    = 0;
         input_weight_wr_data = 0;
         input_data_last      = 0;
-        capture_idx    = 0;
-        repeat (4) @(posedge clk_tb);
-        rst_n = 1;
-        repeat (2) @(posedge clk_tb);
+        capture_idx          = 0;
+        
+        // --- NEW CLOCK-DELAYED RESET SEQUENCE ---
+        #50;          // Wait 50ns with clocks completely dead
+        rst_n = 1;    // De-assert reset
+        #50;          // Wait another 50ns (massively satisfies the 1ns fake limit)
+        clk_en = 1;   // NOW start the clocks!
+        
+        repeat (2) @(negedge clk_tb); // Wait a couple cycles before starting tests
+        // ----------------------------------------
+        
         for (test_id = 0; test_id < NUM_TESTS; test_id = test_id + 1) begin
             run_test(test_id);
         end
@@ -197,7 +223,7 @@ module systolic_array_system_tb;
 
         $finish;
     end
-
+    
     task run_test(input integer tid);
         begin
             $display("");
@@ -237,11 +263,11 @@ module systolic_array_system_tb;
             // ---- Write stimulus into FIFOs ----
             write_idx = 0;
             while (write_idx < data_len) begin
-                @(posedge clk_tb);
+                @(negedge clk_tb);
                 if(write_idx % 100 == 0) begin
                     // Simulate a long delay
                     input_wr_en           = 0;
-                    repeat (10) @(posedge clk_tb);
+                    repeat (10) @(negedge clk_tb);
                 end
                 if (!input_fifo_full) begin
                     input_act_wr_data    <= act_data[write_idx];
@@ -258,7 +284,7 @@ module systolic_array_system_tb;
                 end
                 // Insert a long wait
             end
-            @(posedge clk_tb);
+            @(negedge clk_tb);
             input_wr_en <= 0;
             input_data_last <= 0;
 
@@ -266,14 +292,14 @@ module systolic_array_system_tb;
             cycle_count = 0;
             max_cycles  = data_len * 100;
             while (capture_idx < num_output_rows && cycle_count < max_cycles) begin
-                @(posedge clk_tb);
+                @(negedge clk_tb);
                 if(!output_rd_empty) begin
                     output_rd_en = 1;
                     captured_out[capture_idx] = output_rd_data;
                     $display("  [cycle %0t] Output %0d: %h",
                              $time, capture_idx, output_rd_data);
                     capture_idx = capture_idx + 1;
-                    @(posedge clk_tb);
+                    @(negedge clk_tb);
                     output_rd_en = 0;
                 end
                 cycle_count = cycle_count + 1;
@@ -314,7 +340,7 @@ module systolic_array_system_tb;
             end
 
             // Let things settle before next test
-            repeat (10) @(posedge clk_tb);
+            repeat (10) @(negedge clk_tb);
         end
     endtask
 

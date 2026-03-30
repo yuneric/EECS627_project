@@ -9,7 +9,8 @@ module sa_slice_tb;
     parameter PSUM_WIDTH   = 32;
     parameter OUTPUT_WIDTH = 8;
     parameter SHIFT_WIDTH  = 5;
-    parameter FIFO_DEPTH   = 32; 
+    parameter INPUT_FIFO_DEPTH   = 16; 
+    parameter OUTPUT_FIFO_DEPTH   = 8; 
     parameter NUM_TESTS    = 114;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
@@ -21,7 +22,7 @@ module sa_slice_tb;
     logic [DATA_WIDTH*ARRAY_SIZE-1:0] push_act_data;
     logic                             push_data_last;
     logic                             push_en;
-    logic                             push_full;
+    logic                             push_af;
 
     logic                            cdc_req;
     logic                            cdc_ack;
@@ -33,7 +34,7 @@ module sa_slice_tb;
     // logic                               output_valid;
     logic [OUT_VEC_W-1:0]               pop_data;
     logic                               pop_en;
-    logic                               pop_empty;
+//    logic                               pop_empty;
     logic                               output_fifo_full;
 
     logic [WT_ADDR_WIDTH-1:0]         wt_rd_addr;
@@ -50,14 +51,12 @@ module sa_slice_tb;
     always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
 
     sa_slice #(
-        .ARRAY_SIZE   (ARRAY_SIZE),
-        .DATA_WIDTH   (DATA_WIDTH),
-        .WORD_SIZE    (WORD_SIZE),
-        .PSUM_WIDTH   (PSUM_WIDTH),
-        .OUTPUT_WIDTH (OUTPUT_WIDTH),
-        .SHIFT_WIDTH  (SHIFT_WIDTH),
-        .FIFO_DEPTH   (FIFO_DEPTH),
-        .WT_ADDR_WIDTH (WT_ADDR_WIDTH)
+        .PSUM_WIDTH         (PSUM_WIDTH),
+        .SHIFT_WIDTH        (SHIFT_WIDTH),
+        .WT_ADDR_WIDTH      (WT_ADDR_WIDTH),
+        .WORD_SIZE          (DATA_WIDTH*ARRAY_SIZE),
+        .INPUT_FIFO_DEPTH   (INPUT_FIFO_DEPTH),
+        .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
     ) dut (
         .i_clk_sys         (clk_sys),
         .i_clk_sa          (clk_sa),
@@ -70,7 +69,7 @@ module sa_slice_tb;
         .i_push_act_data   (push_act_data),
         .i_push_data_last  (push_data_last),
         .i_push_en         (push_en),
-        .o_push_fifo_full  (push_full),
+        .o_push_af         (push_af),
         .i_wt_sram_rd_addr (wt_rd_addr),
         .i_wt_sram_rd_en   (wt_rd_en),
         .i_wt_sram_wr_addr (wt_wr_addr),
@@ -182,7 +181,7 @@ module sa_slice_tb;
             wt_rd_addr = r;
             @(negedge clk_sys);
             @(negedge clk_sys);
-            $display("SRAM[%0d] = %h  (wrote %h)", r, dut.weight_sram_rdata, weight_data[r]);
+            //$display("SRAM[%0d] = %h  (wrote %h)", r, dut.weight_sram_rdata, weight_data[r]);
         end
 
         // Do the cdc handshake for the backend signals
@@ -211,13 +210,13 @@ module sa_slice_tb;
             @(posedge clk_sys);
 
             @(negedge clk_sys);
-            if (!push_full) begin
+            if (!push_af) begin
                 push_act_data = act_data[write_idx];
                 push_data_last   = (write_idx == data_len - 1) ? 1'b1 : 1'b0;
                 push_en       = 1'b1;
 
-                $display("  [cycle %0t] PUSH[%0d]: act=%h  wt_staged=%h",
-                        $time, write_idx, act_data[write_idx], dut.staged_weight_data);
+                //$display("  [cycle %0t] PUSH[%0d]: act=%h  wt_staged=%h",
+                //        $time, write_idx, act_data[write_idx], dut.staged_weight_data);
 
 
                 @(posedge clk_sys);
@@ -240,7 +239,7 @@ module sa_slice_tb;
         cycle_count = 0;
         max_cycles  = data_len * 100;
         while (capture_idx < num_output_rows && cycle_count < max_cycles) begin
-            @(posedge clk_sys);
+            repeat(2) @(posedge clk_sys);
             if (!pop_empty) begin
                 pop_en = 1;
                 captured_out[capture_idx] = pop_data;

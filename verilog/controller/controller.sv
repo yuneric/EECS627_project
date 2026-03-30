@@ -161,8 +161,8 @@ module controller #(
     wire [9:0] Ho;
     wire [9:0] Wo;
 
-    assign Ho = ((npu_comp_H + npu_padding - npu_weight_H) >> npu_stride) - 1;
-    assign Wo = ((npu_comp_W + npu_padding - npu_weight_W) >> npu_stride) - 1;
+    assign Ho = ((npu_comp_H + (npu_padding << 1) - npu_weight_H) >> npu_stride) + 1;
+    assign Wo = ((npu_comp_W + (npu_padding << 1) - npu_weight_W) >> npu_stride) + 1;
 
     always_ff @(posedge i_clk or negedge i_resetn) begin
         if(!i_resetn) begin

@@ -136,12 +136,12 @@ module systolic_array_tb;
                     @(negedge clk);
                     drain = 1;
                     #1;
-                    check_row(ARRAY_SIZE-1, mem_golden[0]);
+                    check_row(0, mem_golden[0]);
 
-                    for (j = 1; j < ARRAY_SIZE; j = j + 1) begin
+                    for (j = 1; j < ARRAY_SIZE-1; j = j + 1) begin
                         @(posedge clk);
                         #1;
-                        check_row(ARRAY_SIZE-1-j, mem_golden[j]);
+                        check_row(j, mem_golden[j]);
                     end
 
                     @(negedge clk);

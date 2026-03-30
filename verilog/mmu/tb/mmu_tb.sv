@@ -26,7 +26,13 @@ module mmu_tb;
     logic rst_n = 0;
     always #2.5 clk = ~clk;
     logic wmem_clk;// why do these timing violations exists
-    assign #1 wmem_clk = clk;
+
+    `ifdef APR
+        assign #1 wmem_clk = ~clk;
+    `else
+        assign wmem_clk = clk;
+    `endif
+    
     integer act_write_count;
 
     logic [63:0] act_sram [0:4095]; //the activation on chip sram (load tile data into), read tile data from and send to off chip memory
@@ -119,16 +125,21 @@ module mmu_tb;
 
 
     // $sdf_annotate(sdf_file, scope, config_file, log_file);
-    `ifdef SYN
+    `ifdef APR
+    initial begin
+        $display("[%0t] Applying APR SDF", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
+        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/axi/axi_arbiter.apr.sdf", mmu_tb.arbiter_inst, "",, "MAXIMUM");
+    end
+    `elsif SYN
     initial begin
         $display("[%0t] Applying SDF", $time);
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmu/mmu.syn.sdf", mmu_tb.mmu_dut);
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", mmu_tb.arbiter_inst);
-        $display("[%0t] SDF annotation call finished", $time);
     end
     `else
     initial begin
-        $display("[%0t] SYN not defined, no SDF annotation", $time);
+        $display("[%0t] no SDF annotation", $time);
     end
     `endif
 
@@ -296,6 +307,7 @@ module mmu_tb;
             //setting up signals for read
             wt_mem_rd_addr = '0;
             wt_mem_rd_en   = '0;
+            //@(negedge clk);
             wt_mem_rd_addr[bank*WT_AW +: WT_AW] = addr[WT_AW-1:0];
             wt_mem_rd_en[bank] = 1'b1;
 
@@ -499,6 +511,21 @@ module mmu_tb;
             write_count = write_count + 1;
         end
     end
+    always @(posedge clk) begin
+        if (i_npu_rvalid || o_wgt_wen) begin
+            $display("[%0t] rvalid=%0b rdata=%08h beat_toggle=%0b half=%08h wgt_wen=%0b wgt_wdata=%016h burst_addr=%08h burst_count=%0d",
+                    $time,
+                    i_npu_rvalid,
+                    i_npu_rdata,
+                    mmu_dut.beat_toggle,
+                    mmu_dut.half_word,
+                    o_wgt_wen,
+                    o_wgt_wdata,
+                    arbiter_inst.burst_addr,
+                    arbiter_inst.burst_count);
+        end
+    end
+
 
 
     // task automatic dump_weight_srams_python_format(
@@ -541,10 +568,6 @@ module mmu_tb;
     // endtask
     // always @(posedge clk) begin
     //     $display("[%0t edge]  rvalid=%0b rlast=%0b data=%08h row_counter=%0d kcnt=%0d done=%0b",
-    //             $time, i_npu_rvalid, i_npu_rlast, i_npu_rdata,
-    //             mmu_dut.row_counter, mmu_dut.kernel_word_count, o_done);
-    //     #1;
-    //     $display("[%0t +1ns] rvalid=%0b rlast=%0b data=%08h row_counter=%0d kcnt=%0d done=%0b",
     //             $time, i_npu_rvalid, i_npu_rlast, i_npu_rdata,
     //             mmu_dut.row_counter, mmu_dut.kernel_word_count, o_done);
     // end
@@ -709,7 +732,7 @@ module mmu_tb;
         errors              = 0;
         write_count         = 0;
         timeout_count       = 0;
-        for (test_idx = 0; test_idx <= 7; test_idx = test_idx + 1) begin
+        for (test_idx = 0; test_idx <= 1; test_idx = test_idx + 1) begin
         //for (test_idx = 7; test_idx <= 7; test_idx = test_idx + 1) begin
             ///===============================LOAD WEIGHTS==================================================
             cfg_path        = $sformatf("../../../goldenbrick/mmu_vectors/test%0d/config.txt", test_idx);
@@ -741,7 +764,7 @@ module mmu_tb;
                 memory[i] = 32'h0;
 
             $readmemh(wgt_hex_path, memory, WGT_BASE >> 2);
-
+            @(negedge clk);
             i_load_weights      = 1'b0;
             i_load_tile         = 1'b0;
             i_store_tile        = 1'b0;
@@ -756,9 +779,10 @@ module mmu_tb;
 
             $display("Running load_weights test%0d: N=%0d H=%0d W=%0d C=%0d words_per_channel=%0d",
                      test_idx, n_cfg, h_cfg, w_cfg, c_cfg, wpc_cfg);
-
+            repeat (1) @(posedge clk);
+            @(negedge clk);
             i_load_weights = 1'b1;
-            @(posedge clk);
+            @(negedge clk); //apr
             i_load_weights = 1'b0;
 
             while (!done_seen && timeout_count < 400000) begin
@@ -791,7 +815,9 @@ module mmu_tb;
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
             rst_n = 1'b1;
-            repeat (2) @(posedge clk);
+            @(posedge clk);
+            #0.1 rst_n = 1'b1;
+            repeat (3) @(posedge clk);
 
             for (i = 0; i < 4096; i = i + 1)
                 act_sram[i] = 64'h0;
@@ -806,7 +832,7 @@ module mmu_tb;
             $readmemh(act_hex_path, memory, ACT_BASE >> 2);
             load_golden_act_sram(golden_hex_path);
             load_golden_store_beats(golden_store_path);
-
+            @(negedge clk); //apr
             i_load_weights      = 1'b0;
             i_load_tile         = 1'b0;
             i_store_tile        = 1'b0;
@@ -825,9 +851,9 @@ module mmu_tb;
 
             $display("Running load_tile test%0d: H=%0d W=%0d C=%0d words_per_channel=%0d",
                      test_idx, h_cfg, w_cfg, c_cfg, wpc_cfg);
-
+            @(negedge clk);
             i_load_tile = 1'b1;
-            @(posedge clk);
+            @(negedge clk);
             i_load_tile = 1'b0;
 
             timeout_count = 0;

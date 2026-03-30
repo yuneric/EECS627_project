@@ -129,18 +129,7 @@ module mmu #(
     logic [19:0] row_beats_remaining; // axi beats left in the current row
     logic [CPU_ADDR_WIDTH-1:0] row_base_addr; //byte address of the start of the current row
 
-    //THNGS TO DO: 
-    //1. FIX THE STRIDE LOGIC and TEST WITH MORE THAN KERNELS
-    //2. Make read request and write request logic consistent
-    //3. Incorporate bvalid + check that all the valid axi handshake signals are being used (like wlast)
-    //4. FIX load weights logic to not be restricted by the row
-
     //UPDATE: ADDED NPU bvalid BECAUSE WE DONT WANT TO ISSUE NEXT WRITE UNTIL BVALID SHOWS UP
-
-
-    //okay now that I've looked through the code -> look through the stride logic and fix that -> then look through nanda.py to understand how it works
-
-
     always_ff @(posedge i_clk or negedge i_rst_n) begin
         if(!i_rst_n) begin
             state               <= IDLE;
@@ -191,19 +180,15 @@ module mmu #(
                         end else if (i_load_weights) begin
                             op_type <= LOAD_WEIGHTS;
                         end
-
                         cfg_N_q             <= i_N;
                         cfg_W_q             <= i_W;
                         cfg_H_q             <= i_H;
                         cfg_words_per_channel_q <= i_words_per_channel;
                         cfg_tile_stride_q <= i_tile_stride;
-
                         //beat toggle keeps track of whether we're loading high or low bit
                         beat_toggle  <= 0;
-
                         //latch in the low 32 bits.
                         half_word    <= 0;
-
                         //mem_if_addr- we'll need this for loading tiles
                         mem_if_addr    <= 0;
                         row_counter  <= 0;
@@ -216,7 +201,6 @@ module mmu #(
                         row_base_addr <= i_addr;
                         // //the total number of beats in a row.
                         // row_beats_total <= i_W * i_words_per_channel * 2;
-
                         // //how many of the beats are remaining per row
                         row_beats_remaining <= '0;
                         row_beats_total <= '0;
@@ -281,20 +265,14 @@ module mmu #(
                         //else we're processing the high 32-bits, so we want to increment out mem_if_addr by 1 for load tile operation so we could sent to the correct address next time.
                         end else begin
                             mem_if_addr <= mem_if_addr + 1; // second beat completes so move to the next address
-
-
                             //if we're loading weights
                             if (op_type == LOAD_WEIGHTS) begin // switch to the next bank only after every 8 kernels
-
                                 //if all the words in a kernel have been processed
                                 if (kernel_word_count == kernel_words - 1) begin
-
                                     //reset the counter
                                     kernel_word_count <= 0; // the last 64-bit word of the current kernel.
-
                                     //increment the kernel counter because we've just finished processing an entire kernel
                                     kernel_count <= kernel_count + 1;
-
                                     //if kernel_count is at 7 -> so 0 to 7 have been filled
                                     if ((kernel_count % 8) == 7) begin // Switch bank after every 8 kernels
 
@@ -329,16 +307,12 @@ module mmu #(
 
                             //if the beats remaining are less than 256
                             if (row_beats_remaining <= 256) begin
-
                                 //so here we're doing both by row -> this is not efficient for streaming weights so come back to this.
                                 row_counter        <= row_counter + 1;
-
                                 //move to next address -> which is row_base_raddr + the number of stides we read.
                                 current_addr   <= row_base_addr + row_stride_bytes;
-
                                 //incrementing the row_base_addr -> incrementing row_base_addr + update it to be the same as current.
                                 row_base_addr      <= row_base_addr + row_stride_bytes;
-
                                 //I think this is the reset  logic -> so it sets it up for the next read because we're receiving the last beat.
                                 row_beats_remaining <= row_beats_total;
                             //else we have 256 length beats
@@ -372,16 +346,12 @@ module mmu #(
                     if (i_npu_wready) begin
                         //keep track of beats per burst - this enables us to signal the wlast
                         beats_per_burst <= beats_per_burst - 1;
-                        
-
                         //toggle the beats to keep track of whether we're sending the lower 32 bits or upper 32 bits
                         beat_toggle <= ~beat_toggle;
-
                         //if we're dealing with the upper 32 bits, then increment the mem_if address to the next.
                         if(beat_toggle == 1'b1) begin
                             mem_if_addr <= mem_if_addr + 1; // both half_wrod sent
                         end
-
                         //if we're at the last beat
                         if(beats_per_burst  == 1) begin
                             //reset beat_toggle
@@ -396,13 +366,10 @@ module mmu #(
                         if(row_beats_remaining <= 256) begin
                             //burst finished the current row
                             //check if more rows left then jump to the next off-chip row base
-
                             //if we are not at the height we want to be, we need to issue more burst requests
                             if (row_counter != h_counter - 1) begin
-
                                 //we increment row counter
                                 row_counter        <= row_counter + 1;
-
                                 //this follow the read logic with resetting current_addr, row_base_addr
                                 //this is reset logic cause we're done with the burst and the row so that's why this works.
                                 current_addr   <= row_base_addr + row_stride_bytes;

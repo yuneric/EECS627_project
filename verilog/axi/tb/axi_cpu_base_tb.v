@@ -260,8 +260,10 @@ module testbench;
     always #2.5 clk = ~clk;
 
     initial begin
+        resetn = 1'b0;
         repeat (100) @(posedge clk);
-        resetn <= 1;
+        @(negedge clk);
+        resetn = 1'b1;
     end
 
     // --- ARBITER TO MEMORY WIRES ---
@@ -341,27 +343,33 @@ module testbench;
         npu_log_fd = $fopen("npu_access.out", "w"); 
     end
 
-    `ifdef SYN
-    initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", testbench.arbiter_inst);
-        $display("[%0t] SDF annotation call finished", $time);
-    end
+    `ifdef APR
+        initial begin
+            $display("[%0t] Applying APR SDF to testbench.arbiter_inst", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/axi/axi_arbiter.apr.sdf", testbench.arbiter_inst,,,"MINIMUM");
+        end
+
+        initial begin
+            $display("[%0t] Applying APR SDF to testbench.proc", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/picorv32/picorv32.apr.sdf", testbench.proc,,,"MINIMUM");
+        end
+    `elsif SYN
+        initial begin
+            $display("[%0t] Applying SYN SDF to testbench.arbiter_inst", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf",
+                        testbench.arbiter_inst);
+        end
+
+        initial begin
+            $display("[%0t] Applying SYN SDF to testbench.proc", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", testbench.proc);
+        end
     `else
-    initial begin
-        $display("[%0t] SYN not defined, no SDF annotation", $time);
-    end
+        initial begin
+            $display("[%0t] no SDF annotation", $time);
+        end
     `endif
 
-    `ifdef SYN
-    initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf", testbench.proc);
-        $display("[%0t] SDF annotation call finished", $time);
-    end
-    `else
-    initial begin
-        $display("[%0t] SYN not defined, no SDF annotation", $time);
-    end
-    `endif
 
     // --- 1. THE CPU ---
     picorv32 proc (
@@ -501,15 +509,16 @@ module testbench;
     // NPU Tasks
     task npu_load_weights(input [31:0] addr, input [7:0] len);
         begin
-            @(posedge clk);
-            npu_araddr_reg  <= addr;
-            npu_arlen_reg   <= len;
-            npu_arvalid_reg <= 1'b1;
+            @(negedge clk);
+            npu_araddr_reg  = addr;
+            npu_arlen_reg   = len;
+            npu_arvalid_reg = 1'b1;
             $fwrite(npu_log_fd, "[%0t] START NPU READ BURST: ADDR=%x LEN=%d\n", $time, addr, len+1);
             
             wait(npu_arready_wire);
             @(posedge clk);
-            npu_arvalid_reg <= 1'b0; 
+            @(negedge clk);
+            npu_arvalid_reg = 1'b0;
             
             // Wait for data and log it exactly like your trace output
             begin : read_wait_loop
@@ -532,15 +541,16 @@ module testbench;
         integer i;
         begin
             // --- 1. Address Phase ---
-            @(posedge clk);
-            npu_awaddr_reg  <= addr;
-            npu_awlen_reg   <= len;
-            npu_awvalid_reg <= 1'b1;
+            @(negedge clk);
+            npu_awaddr_reg  = addr;
+            npu_awlen_reg   = len;
+            npu_awvalid_reg = 1'b1;
             
             // Block until NPU is ready, then move to next clock to drop valid
             wait(npu_awready_wire);
             @(posedge clk);
-            npu_awvalid_reg <= 1'b0;
+            @(negedge clk);
+            npu_awvalid_reg = 1'b0;
 
             // --- 2. Data Burst Phase ---
             $fwrite(npu_log_fd, "[%0t] START NPU WRITE BURST: ADDR=%x LEN=%d\n", $time, addr, len+1);
@@ -549,9 +559,10 @@ module testbench;
             i = 0;
             while (i <= len) begin
                 // 1. DRIVE: Set the values for this beat
-                npu_wdata_reg  <= start_data + i; 
-                npu_wvalid_reg <= 1'b1;
-                npu_wlast_reg  <= (i == len);
+                @(negedge clk);
+                npu_wdata_reg  = start_data + i;
+                npu_wvalid_reg = 1'b1;
+                npu_wlast_reg  = (i == len);
 
                 // 2. THE HANDSHAKE: Wait for the rising edge where both are 1
                 // We stay in this 'do-nothing' state until the Arbiter is ready
@@ -572,8 +583,9 @@ module testbench;
             end
 
             // // --- 3. Cleanup & Response Phase ---
-            npu_wvalid_reg <= 1'b0;
-            npu_wlast_reg  <= 1'b0;
+            @(negedge clk);
+            npu_wvalid_reg = 1'b0;
+            npu_wlast_reg  = 1'b0;
             // // npu_bready_reg <= 1'b1; 
 
             $fwrite(npu_log_fd, "waiting\n", $time);
@@ -597,10 +609,10 @@ module testbench;
     // NPU Stimulus Mapped from Trace
     integer test_len;
     initial begin
-        wait(resetn);
+        wait(resetn == 1'b1);
         
         // Let the CPU boot uninterrupted
-        repeat(1) @(posedge clk);
+        repeat(10) @(posedge clk);
         
         // //ADDR=000007d0 LEN=8
         $display("[%0t] Starting NPU Read Test 1...", $time);
@@ -659,6 +671,7 @@ module testbench;
         end
         
         $display("Simulation timeout reached. All trace loads, write, and verify read completed.");
+        $finish;
     end
 
     initial begin

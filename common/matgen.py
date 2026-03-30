@@ -96,6 +96,15 @@ def pad_channels_to_word_size(arr, word_size, axis=-1):
 def make_memory_model(HWC_matrix, word_size):
     mem_model = pad_channels_to_word_size(HWC_matrix, word_size)
     mem_model = mem_model.reshape((-1, word_size))
+    # make element [:][0] so that we can print data easier the msb]
+    mem_model = mem_model[:, ::-1]
+    return mem_model
+
+def make_cpu_memory_model(HWC_matrix, cpu_word_size):
+    mem_model = pad_channels_to_word_size(HWC_matrix, word_size)
+    mem_model = mem_model.reshape((-1, cpu_word_size))
+    # make element [:][0] so that we can print data easier the msb]
+    mem_model = mem_model[:, ::-1]
     return mem_model
 
 # Does a 3D convolution with all filters

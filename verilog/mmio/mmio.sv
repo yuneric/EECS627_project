@@ -150,6 +150,7 @@ module mmio #(
             o_npu_store_tile_start    <= '0;
             o_npu_bank_switch_start   <= '0;
             o_npu_load_weights_start  <= '0;
+
             if(i_cpu_valid && !mmio_ready) begin
                 mmio_ready <= 1;
                 // Only do stuff if the mmio address is valid
@@ -161,7 +162,7 @@ module mmio #(
                         mmio_rdata <= mmio_regs[mmio_addr];
                     end
                 end
-            end 
+            end
 
             // Set and reset logic for the status registers to avoid race conditions
             // Immediately clears relevant done flag upon a write

@@ -151,7 +151,7 @@ module im2col_gen_tb;
 
     logic [MEM_IF_ADDR_WIDTH-1:0] correct_act_addr ;
     logic                         correct_act_valid;
-    logic [MEM_IF_ADDR_WIDTH-1:0] correct_wt_addr  ;
+    logic [WT_ADDR_WIDTH-1:0]     correct_wt_addr  ;
     logic [NUM_ARRAYS-1:0]        correct_wt_valid ;
     logic                         correct_im2col_done;
 
@@ -181,7 +181,7 @@ module im2col_gen_tb;
                 $display("actual: %h expected: %h", wt_valid, correct_wt_valid);
                 num_errs += 1;
             end 
-            if((wt_valid == 1) && (correct_wt_valid == 1) && (wt_addr != correct_wt_addr[WT_ADDR_WIDTH-1:0])) begin
+            if((|wt_valid == 1) && (|correct_wt_valid == 1) && (wt_addr != correct_wt_addr)) begin
                 $display("ERROR: Incorrect wt addr @output # %d", line_num);
                 $display("actual: %h expected: %h", wt_addr, correct_wt_addr);
                 num_errs += 1;

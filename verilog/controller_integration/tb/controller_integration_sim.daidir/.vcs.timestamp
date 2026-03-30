@@ -1,5 +1,5 @@
 0
-58
+59
 +incdir+
 +itf+/usr/caen/vcs-2025.06-1/linux64/lib/vcsdp_lite.tab
 +libext+.v+.vlib+.vh
@@ -10,11 +10,12 @@
 +vc
 +vcsd1
 +vpi
++warn=noSDFCOM_CFTC
 +warn=noSDFCOM_IANE
 +warn=noSDFCOM_IWSBA
 +warn=noSDFCOM_PONF
 +warn=noSDFCOM_UHICD
-+warn=noSDFCOM_UHICD,noSDFCOM_IWSBA,noSDFCOM_IANE,noSDFCOM_PONF
++warn=noSDFCOM_UHICD,noSDFCOM_IWSBA,noSDFCOM_IANE,noSDFCOM_PONF,noSDFCOM_CFTC
 -Mamsrun=
 -Masflags=
 -Mcc=gcc
@@ -76,7 +77,7 @@ _ModuleTable005_=dHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInNwZWN0cmUvMjQuMTAuMzcxIiw
 _ModuleTable004_=Y2UgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvaHNwaWNlLzIwMjUuMDYtMS5sdWEiLApmdWxsTmFtZSA9ICJoc3BpY2UvMjAyNS4wNi0xIiwKbG9hZE9yZGVyID0gNywKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJoc3BpY2UvMjAyNS4wNi0xIiwKd1YgPSAiXjAwMDAyMDI1LjAwMDAwMDAwNi4qemZpbmFsLS4wMDAwMDAwMDEuKnpmaW5hbCIsCn0sCnNwZWN0cmUgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvc3BlY3RyZS8yNC4xMC4zNzEubHVhIiwKZnVsbE5hbWUgPSAic3BlY3RyZS8yNC4xMC4zNzEiLApsb2FkT3JkZXIgPSAyLApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMSwKc3Rh
 _ModuleTable003_=NS4xMC4wMDAubHVhIiwKZnVsbE5hbWUgPSAiZGRpLzI1LjEwLjAwMCIsCmxvYWRPcmRlciA9IDEsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwKdXNlck5hbWUgPSAiZGRpLzI1LjEwLjAwMCIsCndWID0gIl4wMDAwMDAyNS4wMDAwMDAwMTAuKnpmaW5hbCIsCn0sCmVlY3M2MjcgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL2NsYXNzL21vZHVsZXMvZWVjczYyNy93MjYiLApmdWxsTmFtZSA9ICJlZWNzNjI3L3cyNiIsCmxvYWRPcmRlciA9IDExLApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMCwKc3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gImVlY3M2MjcvdzI2IiwKd1YgPSAiKncuMDAwMDAwMDI2Lip6ZmluYWwiLAp9LApoc3Bp
 _ModuleTable002_=dXNlck5hbWUgPSAiY2FkZW5jZS1pYy8yMy4xMC4xNTAiLAp3ViA9ICJeMDAwMDAwMjMuMDAwMDAwMDEwLjAwMDAwMDE1MC4qemZpbmFsIiwKfSwKY2FsaWJyZSA9IHsKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWxpYnJlLzIwMjUuM18yOC4xNyIsCmZ1bGxOYW1lID0gImNhbGlicmUvMjAyNS4zXzI4LjE3IiwKbG9hZE9yZGVyID0gNCwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJjYWxpYnJlLzIwMjUuM18yOC4xNyIsCndWID0gIl4wMDAwMjAyNS4wMDAwMDAwMDMuKl8uMDAwMDAwMDI4LjAwMDAwMDAxNy4qemZpbmFsIiwKfSwKZGRpID0gewpmbiA9ICIvdXNyL2NhZW4vbWlzYy9tb2R1bGVzL2RkaS8y
-_ModuleTable001_=X01vZHVsZVRhYmxlXyA9IHsKTVR2ZXJzaW9uID0gMywKY19yZWJ1aWxkVGltZSA9IDcyMDAuMCwKY19zaG9ydFRpbWUgPSAwLjAxNTU3MjA3MTA3NTQzOSwKZGVwdGhUID0ge30sCmZhbWlseSA9IHt9LAptVCA9IHsKWyJjYWRlbmNlLWljIl0gPSB7CmRlcFQgPSB7CmRlcEEgPSB7CnsKc24gPSAic3BlY3RyZSIsCnZlcnNpb24gPSB7CmtpbmQgPSAiYm9vbCIsCnZhbHVlID0gdHJ1ZSwKfSwKfSwKfSwKfSwKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWRlbmNlLWljLzIzLjEwLjE1MC5sdWEiLApmdWxsTmFtZSA9ICJjYWRlbmNlLWljLzIzLjEwLjE1MCIsCmxvYWRPcmRlciA9IDMsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwK
+_ModuleTable001_=X01vZHVsZVRhYmxlXyA9IHsKTVR2ZXJzaW9uID0gMywKY19yZWJ1aWxkVGltZSA9IDcyMDAuMCwKY19zaG9ydFRpbWUgPSAwLjAxNDgzOTE3MjM2MzI4MSwKZGVwdGhUID0ge30sCmZhbWlseSA9IHt9LAptVCA9IHsKWyJjYWRlbmNlLWljIl0gPSB7CmRlcFQgPSB7CmRlcEEgPSB7CnsKc24gPSAic3BlY3RyZSIsCnZlcnNpb24gPSB7CmtpbmQgPSAiYm9vbCIsCnZhbHVlID0gdHJ1ZSwKfSwKfSwKfSwKfSwKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWRlbmNlLWljLzIzLjEwLjE1MC5sdWEiLApmdWxsTmFtZSA9ICJjYWRlbmNlLWljLzIzLjEwLjE1MCIsCmxvYWRPcmRlciA9IDMsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwK
 _LMFILES_=/usr/caen/misc/modules/ddi/25.10.000.lua:/usr/caen/misc/modules/spectre/24.10.371.lua:/usr/caen/misc/modules/cadence-ic/23.10.150.lua:/usr/caen/misc/modules/calibre/2025.3_28.17:/usr/caen/misc/modules/synopsys-synth/2023.12-SP5.lua:/usr/caen/misc/modules/synopsys-lib-compiler/2025.06-SP2.lua:/usr/caen/misc/modules/hspice/2025.06-1.lua:/usr/caen/misc/modules/vcs/2025.06-1.lua:/usr/caen/misc/modules/xa/2025.06-1.lua:/usr/caen/misc/modules/verdi/2025.06-1.lua:/usr/caen/misc/class/modules/eecs627/w26
 XLIB_SKIP_ARGB_VISUALS=1
 XDG_SESSION_TYPE=x11
@@ -109,7 +110,7 @@ TOOL_HOME=/usr/caen/vcs-2025.06-1/linux64
 TMOUT=0
 TMIARCH=RH_64
 S_COLORS=auto
-SYSTEMD_EXEC_PID=178205
+SYSTEMD_EXEC_PID=54400
 SYNOPSYS_LC_ROOT=/usr/caen/synopsys-lib-compiler-2025.06-SP2
 SYNOPSYS=/usr/caen/synopsys-synth-2023.12-SP5
 SW_PRIMETIME=2025.06
@@ -122,7 +123,7 @@ SNPS_VCS_CLANG_PATH=/usr/caen/vcs-2025.06-1/linux64/clang
 SNPS_PLATFORM=linux64
 SNPS_INTERNAL_VCS_LINUX_OS=linux
 SNPS_64=1
-SESSION_MANAGER=local/unix:@/tmp/.ICE-unix/178188,unix/unix:/tmp/.ICE-unix/178188
+SESSION_MANAGER=local/unix:@/tmp/.ICE-unix/54369,unix/unix:/tmp/.ICE-unix/54369
 SCRNAME=vcs
 SCRIPT_NAME=vcs
 QT_IM_MODULE=ibus
@@ -155,7 +156,7 @@ HSP_GCC_VERSION=12.3.0
 HSP_GCC=/usr/caen/hspice-2025.06-1/hspice/GNU/linux64/gcc/bin/gcc -m64
 HISTCONTROL=ignoredups
 GNOME_TERMINAL_SERVICE=:1.82
-GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/0e75a084_696e_433c_8cfc_6e32776a17ee
+GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/411a5b59_87cf_4f47_94b1_63e4e2a7acd5
 GDM_LANG=en_US.UTF-8
 GDMSESSION=gnome
 GDK_BACKEND=x11
@@ -186,17 +187,17 @@ ARCH=linux64
 0
 14
 1752732158 /usr/caen/vcs-2025.06-1/linux64/packages/snps_msv_nettype_pkg/AN.DB
-1774219484 verilog/standard.vh
+1774497332 verilog/standard.vh
 1773697143 verilog/memory/sp2048x64m8.v
-1773726473 verilog/memory/weight_mem_8bank.v
+1774653932 verilog/memory/weight_mem_8bank.v
 1774067106 verilog/axi/axi_arbiter.v
-1774239999 verilog/mmu/mmu.sv
-1774219484 verilog/standard.vh
+1774558947 verilog/mmu/mmu.sv
+1774497332 verilog/standard.vh
 1773876759 verilog/controller/controller.sv
 1774132269 verilog/cpu/picorv32.v
 1773805083 verilog/mmio/address_decoder.sv
-1773878911 verilog/mmio/mmio.sv
-1774240876 verilog/controller_integration/tb/controller_integration_tb.sv
+1774733084 verilog/mmio/mmio.sv
+1774818477 verilog/controller_integration/tb/controller_integration_tb.sv
 1752984263 /usr/caen/verdi-2025.06-1/share/PLI/VCS/LINUX64/verdi.tab
 1752721624 /usr/caen/vcs-2025.06-1/linux64/lib/vcsdp_lite.tab
 4
@@ -204,5 +205,5 @@ ARCH=linux64
 1752722876 /usr/caen/vcs-2025.06-1/linux64/lib/liberrorinf.so
 1752722871 /usr/caen/vcs-2025.06-1/linux64/lib/libsnpsmalloc.so
 1752722863 /usr/caen/vcs-2025.06-1/linux64/lib/libvfs.so
-1774240918 verilog/controller_integration/tb/controller_integration_sim.daidir
+1774818494 verilog/controller_integration/tb/controller_integration_sim.daidir
 -1 partitionlib

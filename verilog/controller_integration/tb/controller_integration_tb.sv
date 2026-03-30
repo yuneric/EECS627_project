@@ -8,7 +8,7 @@ module controller_integration_tb;
     parameter ADDR_WIDTH      = 32; //of chip memory is 32 bit addresses that are byte-addressable
     parameter DATA_WIDTH      = 32; //data width of axi
     parameter DIM_WIDTH       = 10; //dim width of the tile/weight loading info
-    parameter MMIO_ADDR       = 32'h2000_0000; //MMIO ADDR
+    parameter MMIO_ADDR       = 32'h1000_1000; //MMIO ADDR
     parameter MMIO_SIZE       = 32'h0000_0100; //MNIO SIZE
     parameter WORD_SIZE       = 64; //WORD SIZE of ON CHIP SRAMS
     parameter ACT_AW          = 12;
