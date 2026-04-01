@@ -92,6 +92,9 @@ module computation_overseer #(
     //delay by a cycle -> to account for fifo.
     logic same_sa_slice_one_cycle_delay;
 
+    //adding register to latch in cdc_ack and synchronize it because  give time to recover from metastability.
+    logic d_cdc_ack, d1_cdc_ack;
+
     //account for 1 cycle of latency
     always_ff @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
@@ -208,7 +211,8 @@ module computation_overseer #(
                    next_state = SETUP;
                 end
             SETUP:
-                if(i_cdc_ack) begin
+                //if(i_cdc_ack) begin
+                if(d1_cdc_ack) begin
                     next_state = COMPUTE;
                 end
             TILE_SETUP:
@@ -275,10 +279,14 @@ module computation_overseer #(
 
             same_sa_slice_one_cycle_delay <= '0;
 
+            //reset the cdc_ack signal
+            d_cdc_ack <= '0;
+            d1_cdc_ack <= '0;
+
         end else begin
             d_pop_almost_empty <= i_pop_almost_empty;
             d_pop_full     <= i_pop_full;
-
+            
             case (state)
                 IDLE: begin
                     if (i_comp_compute_start) begin
@@ -314,7 +322,15 @@ module computation_overseer #(
                             active <= '1;
                         end
                     end
+
+                    d_cdc_ack <= '0;
+                    d1_cdc_ack <= '0;
                 end 
+
+                SETUP: begin
+                    d_cdc_ack <= i_cdc_ack;
+                    d1_cdc_ack <= d_cdc_ack;
+                end
 
                 TILE_SETUP: begin 
                     if(curr_tile_x < num_tiles_in_width - 1) begin
@@ -346,7 +362,11 @@ module computation_overseer #(
                                 active <= '1;
                             end
                         end
-                    end   
+                    end
+
+
+                    d_cdc_ack <= '0;
+                    d1_cdc_ack <= '0;
                 end 
 
                 WAIT_FOR_DRAIN: begin 
@@ -364,6 +384,9 @@ module computation_overseer #(
                     end else begin
                         same_sa_slice_one_cycle_delay <= 0;
                     end
+
+                    d_cdc_ack <= '0;
+                    d1_cdc_ack <= '0;
                 end 
 
                 DRAIN: begin
@@ -389,6 +412,9 @@ module computation_overseer #(
                             output_pixel_y <= next_pixel_y;
                         end
                     end
+
+                    d_cdc_ack <= '0;
+                    d1_cdc_ack <= '0;
                 end
             endcase
         end
