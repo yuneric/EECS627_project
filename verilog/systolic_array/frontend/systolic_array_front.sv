@@ -87,7 +87,7 @@ module systolic_array_front #(
     assign o_sa_drain = sa_drain;
 
     // typedef enum {IDLE, COMPUTE, DATA_STALL, PROPAGATE, DRAIN} ctrl_state_t;
-    typedef enum {IDLE, COMPUTE_IDLE, COMPUTE, COMPUTE_LAST, PROPAGATE, DRAIN} ctrl_state_t;
+    typedef enum logic [2:0] {IDLE, COMPUTE_IDLE, COMPUTE, COMPUTE_LAST, PROPAGATE, DRAIN} ctrl_state_t;
     ctrl_state_t ctrl_state;
 
     // top level control fsm
@@ -195,6 +195,7 @@ module systolic_array_front #(
                         ctrl_state <= PROPAGATE;
                     end
                 end
+                
                 DRAIN : begin
                     sa_drain <= 1;
                     if(drain_counter == DRAIN_CYCLES) begin

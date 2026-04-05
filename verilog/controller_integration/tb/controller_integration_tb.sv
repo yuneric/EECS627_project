@@ -28,7 +28,7 @@ module controller_integration_tb;
     //clk stuff
     logic clk   = 1;
     logic rst_n = 0;
-    always #2.5 clk = ~clk; 
+    always #3.0 clk = ~clk; 
 
     //define memory 
     reg [31:0] memory [0:MEM_WORDS-1];
@@ -251,10 +251,23 @@ module controller_integration_tb;
         i_comp_done = 0;
     end
 
+
+    // always_comb begin
+    //     if (act_ren) act_rdata = act_sram[act_raddr[11:0]];
+    //     else         act_rdata = 64'h0;
+    // end 
+    // nanda, above was previously
+    
     //reading from fake mem_if
-    always_comb begin
-        if (act_ren) act_rdata = act_sram[act_raddr[11:0]];
-        else         act_rdata = 64'h0;
+    //keep read data registered so one 64-bit word stays stable across the
+    // two 32-bit AXI beats MMU emits during store_til
+    // beat_toggle != 1'b1 
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            act_rdata <= 64'h0;
+        end else if (act_ren) begin
+            act_rdata <= act_sram[act_raddr[11:0]];
+        end
     end
 
     //writing to fake mem_if

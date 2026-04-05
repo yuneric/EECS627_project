@@ -24,13 +24,13 @@ module mmu_tb;
 
     logic clk   = 0;
     logic rst_n = 0;
-    always #2.5 clk = ~clk;
+    always #3.0 clk = ~clk;
     logic wmem_clk;// why do these timing violations exists
 
     `ifdef APR
         assign #1 wmem_clk = ~clk;
     `else
-        assign wmem_clk = clk;
+        assign wmem_clk = ~clk;
     `endif
     
     integer act_write_count;
@@ -303,19 +303,16 @@ module mmu_tb;
         output logic [63:0] data_out //the data we want to read from.
     );
         begin
-            @(negedge clk);
-            //setting up signals for read
+            @(posedge clk);
             wt_mem_rd_addr = '0;
             wt_mem_rd_en   = '0;
-            //@(negedge clk);
             wt_mem_rd_addr[bank*WT_AW +: WT_AW] = addr[WT_AW-1:0];
             wt_mem_rd_en[bank] = 1'b1;
 
-            //data out - read data
             @(posedge clk);
-            @(negedge clk);
             data_out = wt_mem_rd_data[bank*WT_DW +: WT_DW];
             wt_mem_rd_en = '0;
+            wt_mem_rd_addr = '0;
         end
     endtask
 
@@ -404,13 +401,7 @@ module mmu_tb;
         .i_mem_rdata(mem_rdata)
     );
 
-    //this is simulating the read from on-chip mem srams inorder to conduct the off chip memory stores.
-    always_comb begin
-        if (o_act_ren)
-            i_act_rdata = act_sram[o_act_raddr[11:0]];
-        else
-            i_act_rdata = 64'h0;
-    end
+ 
 
     //this stored_word_at base 
     function automatic [63:0] stored_word_at_base (input integer word_idx);
@@ -511,20 +502,20 @@ module mmu_tb;
             write_count = write_count + 1;
         end
     end
-    always @(posedge clk) begin
-        if (i_npu_rvalid || o_wgt_wen) begin
-            $display("[%0t] rvalid=%0b rdata=%08h beat_toggle=%0b half=%08h wgt_wen=%0b wgt_wdata=%016h burst_addr=%08h burst_count=%0d",
-                    $time,
-                    i_npu_rvalid,
-                    i_npu_rdata,
-                    mmu_dut.beat_toggle,
-                    mmu_dut.half_word,
-                    o_wgt_wen,
-                    o_wgt_wdata,
-                    arbiter_inst.burst_addr,
-                    arbiter_inst.burst_count);
-        end
-    end
+    // always @(posedge clk) begin
+    //     if (i_npu_rvalid || o_wgt_wen) begin
+    //         $display("[%0t] rvalid=%0b rdata=%08h beat_toggle=%0b half=%08h wgt_wen=%0b wgt_wdata=%016h burst_addr=%08h burst_count=%0d",
+    //                 $time,
+    //                 i_npu_rvalid,
+    //                 i_npu_rdata,
+    //                 mmu_dut.beat_toggle,
+    //                 mmu_dut.half_word,
+    //                 o_wgt_wen,
+    //                 o_wgt_wdata,
+    //                 arbiter_inst.burst_addr,
+    //                 arbiter_inst.burst_count);
+    //     end
+    // end
 
 
 
@@ -641,17 +632,31 @@ module mmu_tb;
     //     end
     // endfunction
 
+    //this is simulating the read from on-chip mem srams inorder to conduct the off chip memory stores.
+    // always_comb begin
+    //     if (o_act_ren)
+    //         i_act_rdata = act_sram[o_act_raddr[11:0]];
+    //     else
+    //         i_act_rdata = 64'h0;
+    // end
+
     // fake act sram
     //async reset
     always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         //count keeps actual write count
         act_write_count <= 0;
+        i_act_rdata <= '0;
     end else if (o_act_wen) begin
         //storing the load tile into on chip mem sram.
         act_sram[o_act_waddr[11:0]] <= o_act_wdata;
         act_write_count <= act_write_count + 1;
+    end else if(o_act_ren) begin
+        i_act_rdata <= act_sram[o_act_raddr[11:0]];
+    end else begin
+        i_act_rdata <= '0;
     end
+
     end
     //this is off chip memory write
     always @(posedge clk) begin
@@ -732,7 +737,7 @@ module mmu_tb;
         errors              = 0;
         write_count         = 0;
         timeout_count       = 0;
-        for (test_idx = 0; test_idx <= 1; test_idx = test_idx + 1) begin
+        for (test_idx = 0; test_idx <= 7; test_idx = test_idx + 1) begin
         //for (test_idx = 7; test_idx <= 7; test_idx = test_idx + 1) begin
             ///===============================LOAD WEIGHTS==================================================
             cfg_path        = $sformatf("../../../goldenbrick/mmu_vectors/test%0d/config.txt", test_idx);
@@ -857,7 +862,7 @@ module mmu_tb;
             i_load_tile = 1'b0;
 
             timeout_count = 0;
-            while (!done_seen && timeout_count < 400000) begin
+            while (!done_seen && timeout_count < 4000000) begin
                 @(posedge clk);
                 timeout_count = timeout_count + 1;
             end

@@ -257,7 +257,7 @@ module testbench;
     reg resetn = 0;
     wire trap;
 
-    always #2.5 clk = ~clk;
+    always #3.0 clk = ~clk;
 
     initial begin
         resetn = 1'b0;

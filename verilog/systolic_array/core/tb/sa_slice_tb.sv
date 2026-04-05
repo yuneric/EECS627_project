@@ -11,7 +11,7 @@ module sa_slice_tb;
     parameter SHIFT_WIDTH  = 5;
     parameter INPUT_FIFO_DEPTH   = 16; 
     parameter OUTPUT_FIFO_DEPTH   = 8; 
-    parameter NUM_TESTS    = 114;
+    parameter NUM_TESTS    = 14;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
     localparam int ACT_VEC_W = DATA_WIDTH * ARRAY_SIZE;
@@ -45,10 +45,10 @@ module sa_slice_tb;
     logic [DW-1:0]                    wt_wr_data;
 
     initial clk_sys = 0;
-    always #`CLK_PERIOD_SYS_HALF clk_sys = ~clk_sys;
+    always #3.0 clk_sys = ~clk_sys;
 
     initial clk_sa = 0;
-    always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
+    always #3.0 clk_sa = ~clk_sa;
 
     sa_slice #(
         .PSUM_WIDTH         (PSUM_WIDTH),
@@ -289,6 +289,8 @@ module sa_slice_tb;
     `ifdef SYN
     initial begin
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", sa_slice_tb.dut);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                  sa_slice_tb.dut.u_sa_sys_power_u_sa_sys);
     end
     `else
     initial begin

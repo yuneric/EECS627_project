@@ -344,4 +344,43 @@ module controller #(
         end // reset
     end // always
 
+    `ifdef PROFILE
+        int compute_counter;
+        int load_counter;
+        int store_counter;
+        int weight_counter;
+
+        initial begin
+            compute_counter = 0;
+            load_counter = 0;
+            store_counter = 0;
+            weight_counter = 0;
+        end
+
+        always @(posedge i_clk) begin
+            if(mmu_state == MMU_LOAD_TILE) load_counter += 1;
+            if(mmu_state == MMU_STORE_TILE) store_counter += 1;
+            if(mmu_state == MMU_LOAD_WEIGHTS) weight_counter += 1;
+            if(compute_state == COMP_COMPUTE) compute_counter += 1;
+            if(i_comp_done) begin
+                $display("compute cycles: %d", compute_counter);
+                compute_counter = 0;
+            end
+            if(i_mmu_done && mmu_state == MMU_LOAD_TILE) begin
+                $display("load tile cycles: %d", load_counter);
+                load_counter = 0;
+            end
+            if(i_mmu_done && mmu_state == MMU_STORE_TILE) begin
+                $display("store tile cycles: %d", store_counter);
+                store_counter = 0;
+            end
+            if(i_mmu_done && mmu_state == MMU_LOAD_WEIGHTS) begin
+                $display("load weight cycles: %d", weight_counter);
+                weight_counter = 0;
+            end
+        end
+    `endif
+
+
+
 endmodule

@@ -64,20 +64,6 @@ def debug_mat_gen_NHWC(rows, cols, depth, N):
 
 # thanks gemini
 def pad_channels_to_word_size(arr, word_size, axis=-1):
-    """
-    Zero-pads the specified axis of the array to be a multiple of word_size.
-    
-    Args:
-        arr (np.ndarray): Input array (activations or weights).
-        word_size (int): The alignment size (e.g., 8).
-        axis (int): The dimension to pad. 
-                    Use -1 for HWC activations.
-                    Use 1 for NCHW weights (to pad Ci).
-                    Use 0 for NCHW weights (to pad Co/N).
-    
-    Returns:
-        np.ndarray: The zero-padded array.
-    """
     channels = arr.shape[axis]
     remainder = channels % word_size
     
@@ -93,15 +79,15 @@ def pad_channels_to_word_size(arr, word_size, axis=-1):
     return np.pad(arr, pad_width, mode='constant', constant_values=0)
 
 # Takes a numpy matrix in HWC format, pads the channels and turns it into a memory matrix (depth x word_size)
-def make_memory_model(HWC_matrix, word_size):
-    mem_model = pad_channels_to_word_size(HWC_matrix, word_size)
+def make_memory_model(matrix, word_size):
+    mem_model = pad_channels_to_word_size(matrix, word_size)
     mem_model = mem_model.reshape((-1, word_size))
     # make element [:][0] so that we can print data easier the msb]
     mem_model = mem_model[:, ::-1]
     return mem_model
 
-def make_cpu_memory_model(HWC_matrix, cpu_word_size):
-    mem_model = pad_channels_to_word_size(HWC_matrix, word_size)
+def make_cpu_memory_model(matrix, cpu_word_size):
+    mem_model = pad_channels_to_word_size(matrix, word_size)
     mem_model = mem_model.reshape((-1, cpu_word_size))
     # make element [:][0] so that we can print data easier the msb]
     mem_model = mem_model[:, ::-1]
@@ -124,7 +110,7 @@ def do_cnn_layer(ifmap, kernels, stride=1, padding=0):
 # Does a 3D convolution
 def do_convolution(ifmap, kernel, stride=1):
     # Technically we want "correlation" because "convolution" actually flips the matrix 180
-    result = signal.correlate(ifmap, kernel, mode='valid')
+    result = signal.correlate(ifmap.astype(np.int32), kernel.astype(np.int32), mode='valid')
     # 3D to 2D
     result = result.squeeze()
     # print(result)
@@ -165,7 +151,7 @@ def maxpool_sim(mat):
     buf0 = mat[:dim//2, :]
     buf1 = mat[dim//2:, :]
     n_out = dim // 4
-    golden_out = np.zeros((n_out, dim), dtype=np.int32)
+    golden_out = np.zeros((n_out, dim), dtype=mat.dtype)
     for i in range(n_out):
         for ch in range(dim):
             p0 = buf0[2*i,   ch]
@@ -179,7 +165,7 @@ def maxpool_real(mat):
     H = mat.shape[0]//2
     W = mat.shape[1]//2
     C = mat.shape[2]
-    output = np.zeros((H, W, C), dtype=np.int32)
+    output = np.zeros((H, W, C), dtype=mat.dtype)
     for row in range(H):
         for col in range(W):
             for ch in range(C):

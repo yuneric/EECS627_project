@@ -217,7 +217,7 @@ module sa_slice #(
     //     .o_final_valid         (final_valid)
     // );
 
-    systolic_array_system u_sa (
+    sa_sys_power u_sa_sys_power (
         // Input side
         .i_clk                 (i_clk_sa),
         .i_rst_n               (i_rst_n),

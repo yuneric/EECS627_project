@@ -34,7 +34,7 @@ wire to_mmio;
 assign to_mmio = ((i_cpu_addr >= MMIO_ADDR) && (i_cpu_addr < MMIO_ADDR + MMIO_SIZE));
 
 always_comb begin
-    if(to_mmio !== 1'b1) begin
+    if(!to_mmio) begin
         o_mem_valid = i_cpu_valid;
         o_mem_instr = i_cpu_instr;
         o_mem_addr  = i_cpu_addr;

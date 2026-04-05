@@ -97,10 +97,19 @@ module mmu #(
     logic [19:0] hw_q;
     logic [19:0] tile_words_q;
     logic [19:0] tile_stride_words_q;
+    // nanda aad
+    logic [19:0] hw_calc;
+    logic [19:0] tile_words_calc;
+    logic [19:0] tile_stride_words_calc;
+    logic [19:0] kernel_words_calc;
 
 
     logic [29:0] kernel_words_mul;
     assign kernel_words_mul = hw_q * cfg_words_per_channel_q;
+    assign hw_calc                = cfg_H_q * cfg_W_q;
+    assign tile_words_calc        = cfg_W_q * cfg_words_per_channel_q;
+    assign tile_stride_words_calc = cfg_tile_stride_q * cfg_words_per_channel_q;
+    assign kernel_words_calc      = hw_calc * cfg_words_per_channel_q;
 
     logic [11:0] mem_if_addr;
     logic [10:0] row_counter, h_counter;
@@ -219,29 +228,27 @@ module mmu #(
                         tile_stride_words_q <= '0;
                     end
                 end    
-                SETUP_MUL1: begin
-                    hw_q                <= cfg_H_q * cfg_W_q;
-                    tile_words_q        <= cfg_W_q * cfg_words_per_channel_q;
-                    tile_stride_words_q <= cfg_tile_stride_q * cfg_words_per_channel_q;
-
-                end
                 SETUP_MUL2: begin
+                    hw_q                <= hw_calc;
+                    tile_words_q        <= tile_words_calc;
+                    tile_stride_words_q <= tile_stride_words_calc;
+
                     if(op_type == LOAD_WEIGHTS) begin
                         h_counter           <= cfg_N_q;
-                        kernel_words        <= kernel_words_mul[19:0];
+                        kernel_words        <= kernel_words_calc;
                         kernel_word_count   <= 0;
                         kernel_count        <= 0;
                         curr_wgt_bank       <= 0;
                         wgt_bank_addr_tracker <= '0;
 
-                        row_stride_bytes <= ({{(12){1'b0}}, kernel_words_mul[19:0]} << 3);
-                        row_beats_remaining <= kernel_words_mul[19:0] << 1;
-                        row_beats_total <= kernel_words_mul[19:0] << 1;
+                        row_stride_bytes    <= ({{12{1'b0}}, kernel_words_calc} << 3);
+                        row_beats_remaining <= kernel_words_calc << 1;
+                        row_beats_total     <= kernel_words_calc << 1;
                     end else begin
                         h_counter <= cfg_H_q;
-                        row_stride_bytes    <= ({{(12){1'b0}}, tile_stride_words_q} << 3);
-                        row_beats_total     <= (tile_words_q << 1);
-                        row_beats_remaining <= (tile_words_q << 1);
+                        row_stride_bytes    <= ({{12{1'b0}}, tile_stride_words_calc} << 3);
+                        row_beats_total     <= (tile_words_calc << 1);
+                        row_beats_remaining <= (tile_words_calc << 1);
 
                     end
 
@@ -349,7 +356,7 @@ module mmu #(
                         //toggle the beats to keep track of whether we're sending the lower 32 bits or upper 32 bits
                         beat_toggle <= ~beat_toggle;
                         //if we're dealing with the upper 32 bits, then increment the mem_if address to the next.
-                        if(beat_toggle == 1'b1) begin
+                        if (beat_toggle != 1'b1) begin
                             mem_if_addr <= mem_if_addr + 1; // both half_wrod sent
                         end
                         //if we're at the last beat
@@ -419,6 +426,7 @@ module mmu #(
                     o_wgt_sram_sel <= curr_wgt_bank;
                 end
             end
+            //need to follow something similar for reads.
             if(state == RECEIVE_READ_DATA && i_npu_rvalid && i_npu_rlast && (row_beats_remaining <=256) && (row_counter == h_counter - 1))begin
                 o_done <= 1'b1;
             end
@@ -546,6 +554,7 @@ module mmu #(
                 o_npu_wstrb  = 4'hF; // all bytes valid
 
                 //which set of 32 bits to send
+                //we need it so that toggle 1 -> the registered 
                 if (beat_toggle == 1'b0) begin
                     o_npu_wdata = i_act_rdata[31:0];
                 end else begin

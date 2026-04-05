@@ -279,7 +279,7 @@ def run_im2col_gen(activations, weights, stride, padding, options):
             if(kernels_processed+8 < Co):
                 kernels_processed += dim
             else:
-                kernels_processed == Co
+                kernels_processed = Co
     # kernel group
     if options.debug:
         for kernel_group in range(kernel_groups):
@@ -649,6 +649,21 @@ def run_im2col_test(activations, weights, stride, padding, options):
                 weights[kernel][row] = weights[kernel][row] + row + 1*kernel
         stride = 1
         padding = 0
+    Hi = 32
+    Wi = 32
+    Ci = 8
+    activations = np.zeros((Hi, Wi, Ci))
+    N  = 32
+    Hf = 3
+    Wf = 3
+    weights = np.random.randint(-5, 5, (N, Hf, Wf, Ci), dtype=np.int8)
+    activations = np.random.randint(-5, 5, (Hi, Wi, 3), dtype=np.int8)
+    activations = pad_channels_to_word_size(activations, 8)
+    stride = 1
+    padding = 1
+    maxpool = 1
+    relu_en = 1
+    scale = 0
 
     run_im2col_gen(activations, weights, stride, padding, options)
 
@@ -1056,8 +1071,17 @@ def print_info(activations, weights, stride, padding, maxpool, relu, scale):
     print(f'Scale: {scale}')
 
 def main(options):
-    np.random.seed(42)
-    random.seed(10)
+    # np.random.seed(42)
+    # random.seed(10)
+
+    if options.seed == -1:
+        # Default: Keep original deterministic behavior for old Make targets
+        np.random.seed(42)
+        random.seed(10)
+    else:
+        # Regression mode: Use the seed provided by the bash script
+        np.random.seed(options.seed)
+        random.seed(options.seed)
     
     if options.im2col_test:
         # Testing for im2col_gen
@@ -1147,7 +1171,7 @@ if __name__ == "__main__":
     parser.add_argument('-k_W',     '--k_W', type=int, default=2) 
     parser.add_argument('-k_H',     '--k_H', type=int, default=2) 
     parser.add_argument('-stride',  '--stride', type=int, default=1) 
-    parser.add_argument('-padding', '--padding', type=int, default=0) 
+    parser.add_argument('-padding', '--padding', type=int, default=1) 
     parser.add_argument('-relu',    '--relu', action='store_true')
     parser.add_argument('-maxpool', '--maxpool', action='store_true')
     parser.add_argument('-scale',   '--scale', type=int, default=0)
@@ -1163,6 +1187,7 @@ if __name__ == "__main__":
     parser.add_argument('-comp_over_test', '--comp_over_test', action='store_true')
     parser.add_argument('-compute_test', '--compute_test', action='store_true')
     parser.add_argument('-top_test', '--top_test', action='store_true')
+    parser.add_argument('-seed', '--seed', type=int, default=-1) #adding this for top tests.
     # parser.add_argument('-main_depth', '--main_mem_depth', type=int, default=4096) 
     # parser.add_argument('-weight_depth', '--weight_mem_depth', type=int, default=2048) 
 

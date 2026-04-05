@@ -267,6 +267,7 @@ munchkin #(
         end
     endgenerate
 
+    //mem_if wiring
     mem_bank #(
         .ADDR_WIDTH(NPU_ACT_ADDR_WIDTH),
         .DATA_WIDTH(NPU_DATA_WIDTH)
@@ -445,7 +446,7 @@ munchkin #(
         if ($value$plusargs("CONFIG=%s", cfg_file)) begin
             $display("Using config output file: %s", cfg_file);
         end else begin
-            $display("Using default config file: top_test.out");
+            $display("Using default config file: top_test.cfg");
             cfg_file = "top_test.cfg";
         end
         cfg_fd = $fopen(cfg_file, "r");

@@ -162,7 +162,7 @@ maxproc		126652
 
 Runtime environment variables:
 SHELL=/bin/bash
-SESSION_MANAGER=local/unix:@/tmp/.ICE-unix/54369,unix/unix:/tmp/.ICE-unix/54369
+SESSION_MANAGER=local/unix:@/tmp/.ICE-unix/2695,unix/unix:/tmp/.ICE-unix/2695
 CALIBRE_HOME=/usr/caen/calibre-2025.3_28.17/aok_caen
 COLORTERM=truecolor
 SYNOPSYS=/usr/caen/synopsys-synth-2023.12-SP5
@@ -172,7 +172,7 @@ XDG_MENU_PREFIX=gnome-
 CDPL_HOME=/usr/caen/hspice-2025.06-1/hspice/cdpl
 SPAPI_AHDL_INCLUDE=/usr/caen/hspice-2025.06-1/hspice/include
 HISTSIZE=1000
-HOSTNAME=dc3eap06.dc.umich.edu
+HOSTNAME=dc3eap13.dc.umich.edu
 VCS_HOME=/usr/caen/vcs-2025.06-1
 HSP_SIGMA_AMP=/usr/caen/hspice-2025.06-1/hspice/linux64/python/AVA/ava
 CMIARCH=RH_64
@@ -182,7 +182,7 @@ MAKE_TERMOUT=/dev/pts/0
 SNPS_64=1
 _ModuleTable007_=MjAyNS4wNi0xIiwKfSwKfSwKfSwKfSwKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy92Y3MvMjAyNS4wNi0xLmx1YSIsCmZ1bGxOYW1lID0gInZjcy8yMDI1LjA2LTEiLApsb2FkT3JkZXIgPSA4LApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMSwKc3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInZjcy8yMDI1LjA2LTEiLAp3ViA9ICJeMDAwMDIwMjUuMDAwMDAwMDA2Lip6ZmluYWwtLjAwMDAwMDAwMS4qemZpbmFsIiwKfSwKdmVyZGkgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvdmVyZGkvMjAyNS4wNi0xLmx1YSIsCmZ1bGxOYW1lID0gInZlcmRpLzIwMjUuMDYtMSIsCmxvYWRPcmRlciA9IDEwLApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMSwK
 _ModuleTable002_=dXNlck5hbWUgPSAiY2FkZW5jZS1pYy8yMy4xMC4xNTAiLAp3ViA9ICJeMDAwMDAwMjMuMDAwMDAwMDEwLjAwMDAwMDE1MC4qemZpbmFsIiwKfSwKY2FsaWJyZSA9IHsKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWxpYnJlLzIwMjUuM18yOC4xNyIsCmZ1bGxOYW1lID0gImNhbGlicmUvMjAyNS4zXzI4LjE3IiwKbG9hZE9yZGVyID0gNCwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJjYWxpYnJlLzIwMjUuM18yOC4xNyIsCndWID0gIl4wMDAwMjAyNS4wMDAwMDAwMDMuKl8uMDAwMDAwMDI4LjAwMDAwMDAxNy4qemZpbmFsIiwKfSwKZGRpID0gewpmbiA9ICIvdXNyL2NhZW4vbWlzYy9tb2R1bGVzL2RkaS8y
-SSH_AUTH_SOCK=/run/user/114284010/keyring/ssh
+SSH_AUTH_SOCK=/run/user/114268632/keyring/ssh
 __LMOD_REF_COUNT_MODULEPATH=/etc/scl/modulefiles:2;/etc/modulefiles:1;/usr/share/modulefiles:1;/usr/caen/misc/modules:2;/usr/caen/misc/class/modules:2;/usr/share/modulefiles/Linux:1;/usr/share/modulefiles/Core:1;/usr/share/lmod/lmod/modulefiles/Core:1
 mraarch=linux_64
 _ModuleTable005_=dHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInNwZWN0cmUvMjQuMTAuMzcxIiwKd1YgPSAiXjAwMDAwMDI0LjAwMDAwMDAxMC4wMDAwMDAzNzEuKnpmaW5hbCIsCn0sClsic3lub3BzeXMtbGliLWNvbXBpbGVyIl0gPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvc3lub3BzeXMtbGliLWNvbXBpbGVyLzIwMjUuMDYtU1AyLmx1YSIsCmZ1bGxOYW1lID0gInN5bm9wc3lzLWxpYi1jb21waWxlci8yMDI1LjA2LVNQMiIsCmxvYWRPcmRlciA9IDYsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwKdXNlck5hbWUgPSAic3lub3BzeXMtbGliLWNvbXBpbGVyLzIwMjUuMDYtU1AyIiwKd1YgPSAiXjAwMDAyMDI1LjAwMDAwMDAwNi4qc3Au
@@ -193,25 +193,25 @@ CDSHOME=/usr/caen/ic-23.10.150
 SNPS_PLATFORM=linux64
 SW_PRIMETIME=2025.06
 LMOD_DIR=/usr/share/lmod/lmod/libexec
-KRB5CCNAME=KEYRING:persistent:114284010
+KRB5CCNAME=KEYRING:persistent:114268632
 PWD=/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller_integration/tb
-LOGNAME=chrireed
+LOGNAME=hnanda
 XDG_SESSION_DESKTOP=gnome
 XDG_SESSION_TYPE=x11
 MODULESHOME=/usr/share/Modules
 MANPATH=/usr/share/lmod/lmod/share/man:
-SYSTEMD_EXEC_PID=54400
+SYSTEMD_EXEC_PID=2715
 CDS_Netlisting_Mode=Analog
-XAUTHORITY=/run/user/114284010/gdm/Xauthority
-_ModuleTable008_=c3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInZlcmRpLzIwMjUuMDYtMSIsCndWID0gIl4wMDAwMjAyNS4wMDAwMDAwMDYuKnpmaW5hbC0uMDAwMDAwMDAxLip6ZmluYWwiLAp9LAp4YSA9IHsKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy94YS8yMDI1LjA2LTEubHVhIiwKZnVsbE5hbWUgPSAieGEvMjAyNS4wNi0xIiwKbG9hZE9yZGVyID0gOSwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJ4YS8yMDI1LjA2LTEiLAp3ViA9ICJeMDAwMDIwMjUuMDAwMDAwMDA2Lip6ZmluYWwtLjAwMDAwMDAwMS4qemZpbmFsIiwKfSwKfSwKbXBhdGhBID0gewoiL2V0Yy9zY2wvbW9kdWxlZmlsZXMiLCAiL2V0Yy9zY2wv
+XAUTHORITY=/run/user/114268632/gdm/Xauthority
+_ModuleTable008_=c3RhdHVzID0gImFjdGl2ZSIsCnVzZXJOYW1lID0gInZlcmRpLzIwMjUuMDYtMSIsCndWID0gIl4wMDAwMjAyNS4wMDAwMDAwMDYuKnpmaW5hbC0uMDAwMDAwMDAxLip6ZmluYWwiLAp9LAp4YSA9IHsKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy94YS8yMDI1LjA2LTEubHVhIiwKZnVsbE5hbWUgPSAieGEvMjAyNS4wNi0xIiwKbG9hZE9yZGVyID0gOSwKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJ4YS8yMDI1LjA2LTEiLAp3ViA9ICJeMDAwMDIwMjUuMDAwMDAwMDA2Lip6ZmluYWwtLjAwMDAwMDAwMS4qemZpbmFsIiwKfSwKfSwKbXBhdGhBID0gewoiL2V0Yy9zY2wvbW9kdWxlZmlsZXMiLCAiL2V0Yy9tb2R1
 CDS_LOAD_ENV=CSF
 HSP_HOME=/usr/caen/hspice-2025.06-1/hspice
 WINDOWPATH=2
 CDS_VERSION=IC6
 GDM_LANG=en_US.UTF-8
 __LMOD_REF_COUNT_PATH=/usr/caen/verdi-2025.06-1/bin:1;/usr/caen/xa-2025.06-1/bin:1;/usr/caen/vcs-2025.06-1/bin:1;/usr/caen/hspice-2025.06-1/hspice/bin:1;/usr/caen/hspice-2025.06-1/hspice/GNU/linux64/gcc/bin:1;/usr/caen/hspice-2025.06-1/hspice/linux64:1;/usr/bin:2;/usr/ucb/bin:1;/usr/caen/synopsys-lib-compiler-2025.06-SP2/bin:1;/usr/caen/synopsys-synth-2023.12-SP5/bin:1;/usr/caen/calibre-2025.3_28.17/aok_caen/bin:1;/usr/caen/ic-23.10.150/tools/bin:1;/usr/caen/ic-23.10.150/tools/dfII/bin:1;/usr/caen/spectre-24.10.371/tools/bin:1;/usr/caen/ddi-25.10.000/bin:1;/usr/local/bin:1;/usr/local/sbin:1;/usr/sbin:1;/usr/um/bin:1;/usr/caen/bin:1
-HOME=/home/chrireed
-USERNAME=chrireed
+HOME=/home/hnanda
+USERNAME=hnanda
 _ModuleTable_Sz_=10
 SYNOPSYS_LC_ROOT=/usr/caen/synopsys-lib-compiler-2025.06-SP2
 LS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=01;37;41:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=01;36:*.au=01;36:*.flac=01;36:*.m4a=01;36:*.mid=01;36:*.midi=01;36:*.mka=01;36:*.mp3=01;36:*.mpc=01;36:*.ogg=01;36:*.ra=01;36:*.wav=01;36:*.oga=01;36:*.opus=01;36:*.spx=01;36:*.xspf=01;36:
@@ -221,8 +221,8 @@ LMOD_SETTARG_FULL_SUPPORT=no
 DD_DONT_DO_OS_LOCKS=SET
 installdir=/usr/caen/hspice-2025.06-1/hspice
 HSP_GCC=/usr/caen/hspice-2025.06-1/hspice/GNU/linux64/gcc/bin/gcc -m64
-GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/411a5b59_87cf_4f47_94b1_63e4e2a7acd5
-_ModuleTable010_=bGVzOi91c3IvY2Flbi9taXNjL21vZHVsZXM6L3Vzci9jYWVuL21pc2MvY2xhc3MvbW9kdWxlczovdXNyL3NoYXJlL21vZHVsZWZpbGVzL0xpbnV4Oi91c3Ivc2hhcmUvbW9kdWxlZmlsZXMvQ29yZTovdXNyL3NoYXJlL2xtb2QvbG1vZC9tb2R1bGVmaWxlcy9Db3JlOi91c3IvY2Flbi9taXNjL21vZHVsZXM6L3Vzci9jYWVuL21pc2MvY2xhc3MvbW9kdWxlcyIsCn0K
+GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/08d31690_b00b_45d2_ada6_ce0471319c5f
+_ModuleTable010_=ZXMvQ29yZTovdXNyL3NoYXJlL2xtb2QvbG1vZC9tb2R1bGVmaWxlcy9Db3JlIiwKfQo=
 LMOD_VERSION=8.7.65
 CDS_INSTALL_DIR=/usr/caen/ic-23.10.150/tools/dfII
 MFLAGS=
@@ -237,7 +237,7 @@ SNPSLMD_LICENSE_FILE=/usr/caen/FLEXlm/data/license.dat.synopsys
 TERM=xterm-256color
 __GL_SHADER_DISK_CACHE=0
 LESSOPEN=||/usr/bin/lesspipe.sh %s
-USER=chrireed
+USER=hnanda
 MGLS_LICENSE_FILE=/usr/caen/FLEXlm/data/license.dat.mentor
 MAKE_TERMERR=/dev/pts/0
 GNOME_TERMINAL_SERVICE=:1.82
@@ -252,29 +252,28 @@ XLIB_SKIP_ARGB_VISUALS=1
 MAKELEVEL=1
 LMOD_sys=Linux
 QT_IM_MODULE=ibus
-_ModuleTable009_=bW9kdWxlZmlsZXMiLCAiL2V0Yy9tb2R1bGVmaWxlcyIKLCAiL3Vzci9zaGFyZS9tb2R1bGVmaWxlcyIsICIvdXNyL2NhZW4vbWlzYy9tb2R1bGVzIgosICIvdXNyL2NhZW4vbWlzYy9jbGFzcy9tb2R1bGVzIiwgIi91c3Ivc2hhcmUvbW9kdWxlZmlsZXMvTGludXgiCiwgIi91c3Ivc2hhcmUvbW9kdWxlZmlsZXMvQ29yZSIsICIvdXNyL3NoYXJlL2xtb2QvbG1vZC9tb2R1bGVmaWxlcy9Db3JlIgosICIvdXNyL2NhZW4vbWlzYy9tb2R1bGVzIiwgIi91c3IvY2Flbi9taXNjL2NsYXNzL21vZHVsZXMiLAp9LApzeXN0ZW1CYXNlTVBBVEggPSAiL2V0Yy9zY2wvbW9kdWxlZmlsZXM6L2V0Yy9zY2wvbW9kdWxlZmlsZXM6L2V0Yy9tb2R1bGVmaWxlczovdXNyL3NoYXJlL21vZHVsZWZp
+_ModuleTable009_=bGVmaWxlcyIsICIvdXNyL3NoYXJlL21vZHVsZWZpbGVzIgosICIvdXNyL2NhZW4vbWlzYy9tb2R1bGVzIiwgIi91c3IvY2Flbi9taXNjL2NsYXNzL21vZHVsZXMiLCAiL3Vzci9zaGFyZS9tb2R1bGVmaWxlcy9MaW51eCIKLCAiL3Vzci9zaGFyZS9tb2R1bGVmaWxlcy9Db3JlIiwgIi91c3Ivc2hhcmUvbG1vZC9sbW9kL21vZHVsZWZpbGVzL0NvcmUiLAp9LApzeXN0ZW1CYXNlTVBBVEggPSAiL2V0Yy9zY2wvbW9kdWxlZmlsZXM6L2V0Yy9tb2R1bGVmaWxlczovdXNyL3NoYXJlL21vZHVsZWZpbGVzOi91c3IvY2Flbi9taXNjL21vZHVsZXM6L3Vzci9jYWVuL21pc2MvY2xhc3MvbW9kdWxlczovdXNyL3NoYXJlL21vZHVsZWZpbGVzL0xpbnV4Oi91c3Ivc2hhcmUvbW9kdWxlZmls
 TMIARCH=RH_64
-_ModuleTable001_=X01vZHVsZVRhYmxlXyA9IHsKTVR2ZXJzaW9uID0gMywKY19yZWJ1aWxkVGltZSA9IDcyMDAuMCwKY19zaG9ydFRpbWUgPSAwLjAxNDgzOTE3MjM2MzI4MSwKZGVwdGhUID0ge30sCmZhbWlseSA9IHt9LAptVCA9IHsKWyJjYWRlbmNlLWljIl0gPSB7CmRlcFQgPSB7CmRlcEEgPSB7CnsKc24gPSAic3BlY3RyZSIsCnZlcnNpb24gPSB7CmtpbmQgPSAiYm9vbCIsCnZhbHVlID0gdHJ1ZSwKfSwKfSwKfSwKfSwKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWRlbmNlLWljLzIzLjEwLjE1MC5sdWEiLApmdWxsTmFtZSA9ICJjYWRlbmNlLWljLzIzLjEwLjE1MCIsCmxvYWRPcmRlciA9IDMsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwK
+_ModuleTable001_=X01vZHVsZVRhYmxlXyA9IHsKTVR2ZXJzaW9uID0gMywKY19yZWJ1aWxkVGltZSA9IDcyMDAuMCwKY19zaG9ydFRpbWUgPSAwLjAxNTY3NTA2NzkwMTYxMSwKZGVwdGhUID0ge30sCmZhbWlseSA9IHt9LAptVCA9IHsKWyJjYWRlbmNlLWljIl0gPSB7CmRlcFQgPSB7CmRlcEEgPSB7CnsKc24gPSAic3BlY3RyZSIsCnZlcnNpb24gPSB7CmtpbmQgPSAiYm9vbCIsCnZhbHVlID0gdHJ1ZSwKfSwKfSwKfSwKfSwKZm4gPSAiL3Vzci9jYWVuL21pc2MvbW9kdWxlcy9jYWRlbmNlLWljLzIzLjEwLjE1MC5sdWEiLApmdWxsTmFtZSA9ICJjYWRlbmNlLWljLzIzLjEwLjE1MCIsCmxvYWRPcmRlciA9IDMsCnByb3BUID0ge30sCnN0YWNrRGVwdGggPSAxLApzdGF0dXMgPSAiYWN0aXZlIiwK
 LM_LICENSE_FILE=license.dat:/usr/caen/FLEXlm/data/license.dat.synopsys
-XDG_RUNTIME_DIR=/run/user/114284010
+XDG_RUNTIME_DIR=/run/user/114268632
 S_COLORS=auto
 _ModuleTable004_=Y2UgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvaHNwaWNlLzIwMjUuMDYtMS5sdWEiLApmdWxsTmFtZSA9ICJoc3BpY2UvMjAyNS4wNi0xIiwKbG9hZE9yZGVyID0gNywKcHJvcFQgPSB7fSwKc3RhY2tEZXB0aCA9IDEsCnN0YXR1cyA9ICJhY3RpdmUiLAp1c2VyTmFtZSA9ICJoc3BpY2UvMjAyNS4wNi0xIiwKd1YgPSAiXjAwMDAyMDI1LjAwMDAwMDAwNi4qemZpbmFsLS4wMDAwMDAwMDEuKnpmaW5hbCIsCn0sCnNwZWN0cmUgPSB7CmZuID0gIi91c3IvY2Flbi9taXNjL21vZHVsZXMvc3BlY3RyZS8yNC4xMC4zNzEubHVhIiwKZnVsbE5hbWUgPSAic3BlY3RyZS8yNC4xMC4zNzEiLApsb2FkT3JkZXIgPSAyLApwcm9wVCA9IHt9LApzdGFja0RlcHRoID0gMSwKc3Rh
 CLS_CDSD_COMPATIBILITY_LOCKING=NO
 DEBUGINFOD_IMA_CERT_PATH=/etc/keys/ima:
 CDS_LIC_FILE=/usr/caen/FLEXlm/data/license.dat.cadence
 which_declare=declare -f
-TMOUT=0
 CDS_AUTO_64BIT=ALL
-XDG_DATA_DIRS=/home/chrireed/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share/:/usr/share/:/usr/caen/misc/menus
+XDG_DATA_DIRS=/home/hnanda/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share/:/usr/share/:/usr/caen/misc/menus
 GDK_BACKEND=x11
 MGC_HOME=/usr/caen/calibre-2025.3_28.17/aok_caen
 PATH=/usr/caen/verdi-2025.06-1/bin:/usr/caen/xa-2025.06-1/bin:/usr/caen/vcs-2025.06-1/bin:/usr/caen/hspice-2025.06-1/hspice/bin:/usr/caen/hspice-2025.06-1/hspice/GNU/linux64/gcc/bin:/usr/caen/hspice-2025.06-1/hspice/linux64:/usr/bin:/usr/ucb/bin:/usr/caen/synopsys-lib-compiler-2025.06-SP2/bin:/usr/caen/synopsys-synth-2023.12-SP5/bin:/usr/caen/calibre-2025.3_28.17/aok_caen/bin:/usr/caen/ic-23.10.150/tools/bin:/usr/caen/ic-23.10.150/tools/dfII/bin:/usr/caen/spectre-24.10.371/tools/bin:/usr/caen/ddi-25.10.000/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/um/bin:/usr/caen/bin
 MODULEPATH=/etc/scl/modulefiles:/etc/modulefiles:/usr/share/modulefiles:/usr/caen/misc/modules:/usr/caen/misc/class/modules:/usr/share/modulefiles/Linux:/usr/share/modulefiles/Core:/usr/share/lmod/lmod/modulefiles/Core
 GDMSESSION=gnome
 _LMFILES_=/usr/caen/misc/modules/ddi/25.10.000.lua:/usr/caen/misc/modules/spectre/24.10.371.lua:/usr/caen/misc/modules/cadence-ic/23.10.150.lua:/usr/caen/misc/modules/calibre/2025.3_28.17:/usr/caen/misc/modules/synopsys-synth/2023.12-SP5.lua:/usr/caen/misc/modules/synopsys-lib-compiler/2025.06-SP2.lua:/usr/caen/misc/modules/hspice/2025.06-1.lua:/usr/caen/misc/modules/vcs/2025.06-1.lua:/usr/caen/misc/modules/xa/2025.06-1.lua:/usr/caen/misc/modules/verdi/2025.06-1.lua:/usr/caen/misc/class/modules/eecs627/w26
-DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/114284010/bus
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/114268632/bus
 LMOD_CMD=/usr/share/lmod/lmod/libexec/lmod
-MAIL=/var/spool/mail/chrireed
+MAIL=/var/spool/mail/hnanda
 CDS=/usr/caen/ic-23.10.150
 OLDPWD=/afs/umich.edu/class/eecs627/w26/groups/group7/project
 BASH_FUNC_ml%%=() {  eval "$($LMOD_DIR/ml_cmd "$@")"
@@ -321,134 +320,134 @@ VCS_EXEC_DONE=1
 LC_ALL=C
 DVE=/usr/caen/vcs-2025.06-1/gui/dve
 SPECMAN_OUTPUT_TO_TTY=1
-FLEXLM_BORROWFILE=/home/chrireed/.dc3eap06.dc.umich.edu-borrow.txt
+FLEXLM_BORROWFILE=/home/hnanda/.dc3eap13.dc.umich.edu-borrow.txt
 Runtime command line arguments:
 argv[0]=./controller_integration_sim
 argv[1]=+MEMORY=controller_integration_sim.mem
 argv[2]=+TRACE=controller_integration_sim.base.trace
 argv[3]=+MEMACCESS=controller_integration_sim.base.memacc
 **********Message Rewind**************
-296 profile - 100
-          CPU/Mem usage: 0.040 sys,  0.090 user,  224.40M mem
-297 Elapsed time:    0:00:00    Sun Mar 29 17:08:14 2026
-298 User CPU time used: 0 seconds
-299 System CPU time used: 0 seconds
-300 pliAppInit
-301 FSDB_GATE is set.
-302 FSDB_RTL is set.
-303 FSDB_DYNAMIC_ALIAS is enabled.
-304 libnuma.so open fail. libnuma.so: cannot open shared object file: No such file or directory
-305 FSDB NUMA optimize not available.
-306 FSDB_PACKED_MODE is enabled.
-307 FSDB_GATE_PACKED is enabled.
-308 [SC]Init: MemoryConsumed=0.00MB ElapsedTime=0hour 0min. 0sec.
-309 FSDB_REDUCE_VC_MEM is enabled.
-310 Enable Parallel Dumping.
-311 pliAppMiscSet: New Sim Round
-312 pliEntryInit
-313 LIBSSCORE=found /usr/caen/verdi-2025.06-1/share/PLI/lib/LINUXAMD64/libsscore_vcs202506.so through $NOVAS_HOME setting.
-314 FSDB Dumper for VCS, Release Verdi_X-2025.06-1, Linux x86_64/64bit, 07/19/2025
-315 (C) 1996 - 2025 by Synopsys, Inc.
-316 sps_call_fsdbDumpfile_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(480)
-317 argv[0]: (integrated_tb.fsdb)
-318 *Verdi* FSDB WARNING: The FSDB file already exists. Overwriting the FSDB file may crash the programs that are using this file.
-319 *Verdi* : Create FSDB file 'integrated_tb.fsdb'
-320 [spi_vcs_vd_ppi_create_root]: no upf option
-321 DUMPER_MEMORY_REDUCTION is enabled.
-322 compile option from '/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller_integration/tb/controller_integration_sim.daidir/vcs_rebuild'.
-323   "vcs '+v2k' '+vc' '-sverilog' '-timescale=1ns/1ps' '-debug_access+all' '-kdb' '+neg_tchk' '+incdir+' '+plusarg_save' '+overlap' '+warn=noSDFCOM_UHICD,noSDFCOM_IWSBA,noSDFCOM_IANE,noSDFCOM_PONF,noSDFCOM_CFTC' '-full64' '-cc' 'gcc' '+libext+.v+.vlib+.vh' 'verilog/controller_integration/tb/controller_integration_tb.sv' 'verilog/mmio/mmio.sv' 'verilog/mmio/address_decoder.sv' 'verilog/cpu/picorv32.v' 'verilog/controller/controller.sv' 'verilog/standard.vh' 'verilog/mmu/mmu.sv' 'verilog/axi/axi_arbiter.v' 'verilog/memory/weight_mem_8bank.v' 'verilog/memory/sp2048x64m8.v' 'verilog/standard.vh' '-o' 'verilog/controller_integration/tb/controller_integration_sim' 2>&1"
-324 DVDI_is_vir_unload_enabled is enable
-325 FSDB_VCS_ENABLE_NATIVE_VC is enable
-326 FSDB_VCS_ENABLE_MEMORY_NATIVE_VC is enabled
-327 sps_call_fsdbDumpvars_vd_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(481)
-328 argv[0]: (0)
-329 argv[1]: (handle) controller_integration_tb
-330 *Verdi* : Begin traversing the scope (controller_integration_tb), layer (0).
-331 *Verdi* : End of traversing.
-332 pliAppHDL_DumpVarComplete traverse var: profile - 
-          CPU/Mem usage: 0.050 sys,  0.100 user,  344.03M mem
-                   incr: 0.010 sys,  0.010 user,  29.25M mem
-                   accu: 0.010 sys,  0.010 user,  29.25M mem
-              accu incr: 0.010 sys,  0.010 user,  29.25M mem
+295 profile - 100
+          CPU/Mem usage: 0.040 sys,  0.160 user,  224.40M mem
+296 Elapsed time:    0:00:00    Wed Apr  1 19:11:33 2026
+297 User CPU time used: 0 seconds
+298 System CPU time used: 0 seconds
+299 pliAppInit
+300 FSDB_GATE is set.
+301 FSDB_RTL is set.
+302 FSDB_DYNAMIC_ALIAS is enabled.
+303 libnuma.so open fail. libnuma.so: cannot open shared object file: No such file or directory
+304 FSDB NUMA optimize not available.
+305 FSDB_PACKED_MODE is enabled.
+306 FSDB_GATE_PACKED is enabled.
+307 [SC]Init: MemoryConsumed=0.00MB ElapsedTime=0hour 0min. 0sec.
+308 FSDB_REDUCE_VC_MEM is enabled.
+309 Enable Parallel Dumping.
+310 pliAppMiscSet: New Sim Round
+311 pliEntryInit
+312 LIBSSCORE=found /usr/caen/verdi-2025.06-1/share/PLI/lib/LINUXAMD64/libsscore_vcs202506.so through $NOVAS_HOME setting.
+313 FSDB Dumper for VCS, Release Verdi_X-2025.06-1, Linux x86_64/64bit, 07/19/2025
+314 (C) 1996 - 2025 by Synopsys, Inc.
+315 sps_call_fsdbDumpfile_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(493)
+316 argv[0]: (integrated_tb.fsdb)
+317 *Verdi* FSDB WARNING: The FSDB file already exists. Overwriting the FSDB file may crash the programs that are using this file.
+318 *Verdi* : Create FSDB file 'integrated_tb.fsdb'
+319 [spi_vcs_vd_ppi_create_root]: no upf option
+320 DUMPER_MEMORY_REDUCTION is enabled.
+321 compile option from '/afs/umich.edu/class/eecs627/w26/groups/group7/project/verilog/controller_integration/tb/controller_integration_sim.daidir/vcs_rebuild'.
+322   "vcs '+v2k' '+vc' '-sverilog' '-timescale=1ns/1ps' '-debug_access+all' '-kdb' '+neg_tchk' '+incdir+' '+plusarg_save' '+overlap' '+warn=noSDFCOM_UHICD,noSDFCOM_IWSBA,noSDFCOM_IANE,noSDFCOM_PONF,noSDFCOM_CFTC' '-full64' '-cc' 'gcc' '+libext+.v+.vlib+.vh' 'verilog/controller_integration/tb/controller_integration_tb.sv' 'verilog/mmio/mmio.sv' 'verilog/mmio/address_decoder.sv' 'verilog/cpu/picorv32.v' 'verilog/controller/controller.sv' 'verilog/standard.vh' 'verilog/mmu/mmu.sv' 'verilog/axi/axi_arbiter.v' 'verilog/memory/weight_mem_8bank.v' 'verilog/memory/sp2048x64m8.v' 'verilog/standard.vh' '-o' 'verilog/controller_integration/tb/controller_integration_sim' 2>&1"
+323 DVDI_is_vir_unload_enabled is enable
+324 FSDB_VCS_ENABLE_NATIVE_VC is enable
+325 FSDB_VCS_ENABLE_MEMORY_NATIVE_VC is enabled
+326 sps_call_fsdbDumpvars_vd_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(494)
+327 argv[0]: (0)
+328 argv[1]: (handle) controller_integration_tb
+329 *Verdi* : Begin traversing the scope (controller_integration_tb), layer (0).
+330 *Verdi* : End of traversing.
+331 pliAppHDL_DumpVarComplete traverse var: profile - 
+          CPU/Mem usage: 0.050 sys,  0.170 user,  344.09M mem
+                   incr: 0.000 sys,  0.010 user,  29.32M mem
+                   accu: 0.000 sys,  0.010 user,  29.32M mem
+              accu incr: 0.000 sys,  0.010 user,  29.32M mem
 
-          Count usage: 701 var,  673 idcode,  376 callback
-                 incr: 701 var,  673 idcode,  376 callback
-                 accu: 701 var,  673 idcode,  376 callback
-            accu incr: 701 var,  673 idcode,  376 callback
-333 Idcode  0 - bc1:0  mda:0
-334 Elapsed time:    0:00:00    Sun Mar 29 17:08:14 2026
-335 User CPU time used: 0 seconds
-336 System CPU time used: 0 seconds
-337 pliAppHDL_DumpVarComplete: profile - 
-          CPU/Mem usage: 0.050 sys,  0.100 user,  344.03M mem
+          Count usage: 705 var,  678 idcode,  426 callback
+                 incr: 705 var,  678 idcode,  426 callback
+                 accu: 705 var,  678 idcode,  426 callback
+            accu incr: 705 var,  678 idcode,  426 callback
+332 Idcode  0 - bc1:0  mda:0
+333 Elapsed time:    0:00:00    Wed Apr  1 19:11:33 2026
+334 User CPU time used: 0 seconds
+335 System CPU time used: 0 seconds
+336 pliAppHDL_DumpVarComplete: profile - 
+          CPU/Mem usage: 0.050 sys,  0.170 user,  344.09M mem
                    incr: 0.000 sys,  0.000 user,  0.00M mem
-                   accu: 0.010 sys,  0.010 user,  29.25M mem
+                   accu: 0.000 sys,  0.010 user,  29.32M mem
               accu incr: 0.000 sys,  0.000 user,  0.00M mem
 
-          Count usage: 701 var,  673 idcode,  376 callback
+          Count usage: 705 var,  678 idcode,  426 callback
                  incr: 0 var,  0 idcode,  0 callback
-                 accu: 701 var,  673 idcode,  376 callback
+                 accu: 705 var,  678 idcode,  426 callback
             accu incr: 0 var,  0 idcode,  0 callback
-338 Idcode  0 - bc1:0  mda:0
-339 Elapsed time:    0:00:00    Sun Mar 29 17:08:14 2026
-340 User CPU time used: 0 seconds
-341 System CPU time used: 0 seconds
-342 sps_call_fsdbDumpMDA_vd_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(482)
-343 *Verdi* : Begin traversing the MDAs, layer (0).
-344 *Verdi* : Enable +mda and +packedmda dumping.
-345 *Verdi* : End of traversing the MDAs.
-346 pliAppHDL_DumpVarComplete traverse var: profile - 
-          CPU/Mem usage: 0.050 sys,  0.130 user,  344.69M mem
-                   incr: 0.000 sys,  0.030 user,  0.67M mem
-                   accu: 0.000 sys,  0.030 user,  0.67M mem
-              accu incr: 0.000 sys,  0.030 user,  0.67M mem
+337 Idcode  0 - bc1:0  mda:0
+338 Elapsed time:    0:00:00    Wed Apr  1 19:11:33 2026
+339 User CPU time used: 0 seconds
+340 System CPU time used: 0 seconds
+341 sps_call_fsdbDumpMDA_vd_main at 0 : verilog/controller_integration/tb/controller_integration_tb.sv(495)
+342 *Verdi* : Begin traversing the MDAs, layer (0).
+343 *Verdi* : Enable +mda and +packedmda dumping.
+344 *Verdi* : End of traversing the MDAs.
+345 pliAppHDL_DumpVarComplete traverse var: profile - 
+          CPU/Mem usage: 0.050 sys,  0.210 user,  344.76M mem
+                   incr: 0.000 sys,  0.040 user,  0.67M mem
+                   accu: 0.000 sys,  0.040 user,  0.67M mem
+              accu incr: 0.000 sys,  0.040 user,  0.67M mem
 
-          Count usage: 566034 var,  674 idcode,  386 callback
+          Count usage: 566038 var,  679 idcode,  436 callback
                  incr: 565333 var,  1 idcode,  10 callback
                  accu: 565333 var,  1 idcode,  10 callback
             accu incr: 565333 var,  1 idcode,  10 callback
-347 Idcode  0 - bc1:0  mda:565341
-348 Elapsed time:    0:00:00    Sun Mar 29 17:08:14 2026
-349 User CPU time used: 0 seconds
-350 System CPU time used: 0 seconds
-351 pliAppHDL_DumpVarComplete: profile - 
-          CPU/Mem usage: 0.050 sys,  0.130 user,  344.69M mem
+346 Idcode  0 - bc1:0  mda:565341
+347 Elapsed time:    0:00:00    Wed Apr  1 19:11:33 2026
+348 User CPU time used: 0 seconds
+349 System CPU time used: 0 seconds
+350 pliAppHDL_DumpVarComplete: profile - 
+          CPU/Mem usage: 0.050 sys,  0.210 user,  344.76M mem
                    incr: 0.000 sys,  0.000 user,  0.00M mem
-                   accu: 0.000 sys,  0.030 user,  0.67M mem
+                   accu: 0.000 sys,  0.040 user,  0.67M mem
               accu incr: 0.000 sys,  0.000 user,  0.00M mem
 
-          Count usage: 566034 var,  674 idcode,  386 callback
+          Count usage: 566038 var,  679 idcode,  436 callback
                  incr: 0 var,  0 idcode,  0 callback
                  accu: 565333 var,  1 idcode,  10 callback
             accu incr: 0 var,  0 idcode,  0 callback
-352 Idcode  0 - bc1:0  mda:565341
-353 Elapsed time:    0:00:00    Sun Mar 29 17:08:14 2026
-354 User CPU time used: 0 seconds
-355 System CPU time used: 0 seconds
-356 End of simulation at 1159100000
-357 Memory usage: 507.847 M
-358 Maximum resident set size: 277 MB
-359 Hard page faults: 0
-360 Soft page faults: 37144
-361 Elapsed time:    0:00:04    Sun Mar 29 17:08:18 2026
-362 User CPU time used: 1 seconds
-363 System CPU time used: 0 seconds
-364 Begin FSDB profile info:
-365 FSDB Writer : bc1(2318504) bcn(6966792) mtf/stf(0/1)
-FSDB Writer elapsed time : flush(0.648926) io wait(0.000000) theadpool wait(0.000000)
+351 Idcode  0 - bc1:0  mda:565341
+352 Elapsed time:    0:00:00    Wed Apr  1 19:11:33 2026
+353 User CPU time used: 0 seconds
+354 System CPU time used: 0 seconds
+355 End of simulation at 1417416000
+356 Memory usage: 507.912 M
+357 Maximum resident set size: 279 MB
+358 Hard page faults: 0
+359 Soft page faults: 37463
+360 Elapsed time:    0:00:02    Wed Apr  1 19:11:35 2026
+361 User CPU time used: 1 seconds
+362 System CPU time used: 0 seconds
+363 Begin FSDB profile info:
+364 FSDB Writer : bc1(2405589) bcn(7074257) mtf/stf(0/1)
+FSDB Writer elapsed time : flush(1.123506) io wait(0.000000) theadpool wait(0.000000)
 FSDB Writer cpu time : MT Compression : 0
-366 End FSDB profile info
-367 FSDB closed. Name: integrated_tb.fsdb Size: 1106725
-368 Parallel profile     - ProducerThread:1 ConsumerThread:1 Buffer:64MB
-369                      - BlockUsed:91 Acquire:0 BufferUsed:187101292
-370                      - Flush:4 Expand:0 ProducerWait:0 ConsumerWait:47
-371                      - MainProducerTime:2.103716138 TotalConsumerTime:0.685886673
-372                      - ElapsedTime:4.173828000
-373 Producer   0 profile - BlockUsed:91 Acquire:0 BufferUsed:187101292
-374 Consumer   0 profile - Affinity:-1 CPUTime:0.685886673 LifeTime:3.817331799 (0.18%)
-375                      - BlockUsed:91 Acquire:0 BufferUsed:187101292
-376 SimExit
-377 Elapsed time:    0:00:05    Sun Mar 29 17:08:19 2026
-378 User CPU time used: 2 seconds
-379 System CPU time used: 0 seconds
-380 Sim process exit
+365 End FSDB profile info
+366 FSDB closed. Name: integrated_tb.fsdb Size: 1338151
+367 Parallel profile     - ProducerThread:1 ConsumerThread:1 Buffer:64MB
+368                      - BlockUsed:93 Acquire:0 BufferUsed:191025069
+369                      - Flush:4 Expand:0 ProducerWait:0 ConsumerWait:40
+370                      - MainProducerTime:1.670877868 TotalConsumerTime:0.710951553
+371                      - ElapsedTime:2.874054000
+372 Producer   0 profile - BlockUsed:93 Acquire:0 BufferUsed:191025069
+373 Consumer   0 profile - Affinity:-1 CPUTime:0.710951553 LifeTime:1.990746727 (0.36%)
+374                      - BlockUsed:93 Acquire:0 BufferUsed:191025069
+375 SimExit
+376 Elapsed time:    0:00:04    Wed Apr  1 19:11:37 2026
+377 User CPU time used: 1 seconds
+378 System CPU time used: 0 seconds
+379 Sim process exit

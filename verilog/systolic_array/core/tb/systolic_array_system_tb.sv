@@ -8,7 +8,7 @@ module systolic_array_system_tb;
     parameter OUTPUT_WIDTH = 8;
     parameter SHIFT_WIDTH  = 5;
     parameter FIFO_DEPTH   = 32; 
-    parameter NUM_TESTS    = 1;
+    parameter NUM_TESTS    = 14;
     // parameter MAX_CYCLES   = 500;
 
     parameter ACT_VEC_W    = DATA_WIDTH * ARRAY_SIZE;
@@ -22,8 +22,8 @@ module systolic_array_system_tb;
     initial clk_tb = 0;
     initial clk_sa = 0;
     
-    always #2.5 if (clk_en) clk_tb = ~clk_tb;  
-    always #2.5 if (clk_en) clk_sa = ~clk_sa;
+    always #3.1 if (clk_en) clk_tb = ~clk_tb;  
+    always #3.1 if (clk_en) clk_sa = ~clk_sa;
 
     logic  [ACT_VEC_W-1:0]    input_act_wr_data;
     logic  [ACT_VEC_W-1:0]    input_weight_wr_data;
@@ -291,6 +291,7 @@ module systolic_array_system_tb;
             // ---- Wait for outputs ----
             cycle_count = 0;
             max_cycles  = data_len * 100;
+            output_rd_en = 0;
             while (capture_idx < num_output_rows && cycle_count < max_cycles) begin
                 @(negedge clk_tb);
                 if(!output_rd_empty) begin
@@ -304,7 +305,6 @@ module systolic_array_system_tb;
                 end
                 cycle_count = cycle_count + 1;
             end
-
             if (capture_idx < num_output_rows) begin
                 $display("  ERROR: Timeout! %0t Only captured %0d of %0d outputs,", $time,
                          capture_idx, num_output_rows);

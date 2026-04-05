@@ -30,7 +30,7 @@ module systolic_array_system #(
     wire [PSUM_WIDTH*ARRAY_SIZE-1:0]  fe_result_out;
     wire                              fe_result_valid;
 
-    wire [ARRAY_SIZE-1:0]             out_valid_vec;  // per-column valid from array
+    //wire [ARRAY_SIZE-1:0]             out_valid_vec;  // per-column valid from array
 
     systolic_array_front #(
         .ARRAY_SIZE(ARRAY_SIZE),
@@ -67,7 +67,8 @@ module systolic_array_system #(
         .act_in_vec     (act_to_array   ),
         .weight_in_vec  (weight_to_array),
         .psum_out_vec   (psum_from_array),
-        .out_valid_vec  (out_valid_vec  )
+        //.out_valid_vec  (out_valid_vec  )
+        .out_valid_vec  (  )
     );
 
     // ReLU (combinational)
