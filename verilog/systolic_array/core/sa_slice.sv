@@ -174,7 +174,7 @@ module sa_slice #(
 
         // Perform Handshake
         cdc_ack1 <= 0;
-        if(cdc_req2) begin
+        if(cdc_req2 & !cdc_ack1) begin
             cdc_ack1 <= 1;
             internal_relu_en <= i_relu_en;
             internal_maxpool_en <= i_maxpool_en;

@@ -16,8 +16,8 @@ module mmio_tb;
     parameter DATA_WIDTH = 32;
     parameter DIM_WIDTH  = 10;
     parameter NUM_REGS   = 21;
-    parameter MMIO_ADDR  = 32'h2000_0000;
-    parameter MMIO_SIZE  = 32'h0000_0100;
+    parameter MMIO_ADDR  = 32'h1000_1000;
+    parameter MMIO_SIZE  = 32'h0000_1000;
 
     wire cpu_valid;
     wire cpu_instr;
@@ -140,6 +140,7 @@ module mmio_tb;
         .i_mmio_rdata(mmio_rdata)
     );
 
+    wire [2:0]                 npu_clk_sel        ;
     wire                       npu_new_cmd        ;
     wire                       npu_cmd_ack        ;
     wire                       npu_stride         ;
@@ -200,6 +201,7 @@ module mmio_tb;
         .o_npu_store_tile_start     (store_tile_start   ),
         .o_npu_load_weights_start   (load_weights_start ),
         
+        .o_npu_clk_sel      (npu_clk_sel      ),
         .o_npu_stride       (npu_stride       ),
         .o_npu_padding      (npu_padding      ),
         .o_npu_maxpool_en   (npu_maxpool_en   ),
@@ -247,6 +249,7 @@ module mmio_tb;
             load_tile_start   : %b\n \
             store_tile_start  : %b\n \
             load_weights_start: %b\n \
+            npu_clk_sel       : %b\n \
             npu_stride        : %h\n \
             npu_padding       : %h\n \
             npu_maxpool_en    : %h\n \
@@ -276,6 +279,7 @@ module mmio_tb;
             load_tile_start   ,
             store_tile_start  ,
             load_weights_start,
+            npu_clk_sel      ,
             npu_stride       ,
             npu_padding      ,
             npu_maxpool_en   ,
@@ -376,182 +380,3 @@ module mmio_tb;
         end
     end
 endmodule
-
-
-// `timescale 1ns / 1ps
-
-// module mmio_tb;
-
-//     parameter CLK_PERIOD = 10;
-//     parameter MMIO_BASE  = 32'h1000_0000;
-
-//     reg        clk;
-//     reg        rst_n;
-//     reg        select;
-//     reg        mem_valid;
-//     reg [31:0] mem_addr;
-//     reg [31:0] mem_wdata;
-//     reg [ 3:0] mem_wstrb;
-//     wire       mem_ready;
-//     wire [31:0] mem_rdata;
-
-//     wire [ 4:0] mmio_addr;
-//     wire [31:0] mmio_wdata;
-//     wire        mmio_wen;
-//     reg  [31:0] mmio_rdata_in;
-
-//     integer errors = 0;
-
-//     reg [31:0] npu_regs [0:3][0:7];
-//     reg [31:0] npu_global_status;
-//     integer i, j;
-
-//     initial begin
-//         for (i = 0; i < 4; i = i + 1)
-//             for (j = 0; j < 8; j = j + 1)
-//                 npu_regs[i][j] = 0;
-//         npu_global_status = 0;
-//     end
-
-//     always @(posedge clk) begin
-//         if (mmio_wen && mmio_addr != 5'h1F)
-//             npu_regs[mmio_addr[4:3]][mmio_addr[2:0]] <= mmio_wdata;
-//     end
-
-//     always @(*)
-//         if (mmio_addr == 5'h1F)
-//             mmio_rdata_in = npu_global_status;
-//         else
-//             mmio_rdata_in = npu_regs[mmio_addr[4:3]][mmio_addr[2:0]];
-
-//     mmio #(.NUM_GROUPS(4)) dut (
-//         .clk          (clk),
-//         .rst_n        (rst_n),
-//         .select       (select),
-//         .mem_valid    (mem_valid),
-//         .mem_addr     (mem_addr),
-//         .mem_wdata    (mem_wdata),
-//         .mem_wstrb    (mem_wstrb),
-//         .mem_ready    (mem_ready),
-//         .mem_rdata    (mem_rdata),
-//         .mmio_addr    (mmio_addr),
-//         .mmio_wdata   (mmio_wdata),
-//         .mmio_wen     (mmio_wen),
-//         .mmio_rdata_in(mmio_rdata_in)
-//     );
-
-//     initial begin
-//         clk = 0;
-//         forever #(CLK_PERIOD/2) clk = ~clk;
-//     end
-
-//     task cpu_write;
-//         input [31:0] addr;
-//         input [31:0] data;
-//         begin
-//             @(negedge clk);
-//             mem_valid = 1;
-//             mem_addr  = addr;
-//             mem_wdata = data;
-//             mem_wstrb = 4'hF;
-//             select    = 1;
-//             while (!mem_ready) @(posedge clk);
-//             @(negedge clk);
-//             mem_valid = 0;
-//             mem_wstrb = 0;
-//             select    = 0;
-//         end
-//     endtask
-
-//     task cpu_read;
-//         input  [31:0] addr;
-//         output [31:0] rdata;
-//         begin
-//             @(negedge clk);
-//             mem_valid = 1;
-//             mem_addr  = addr;
-//             mem_wstrb = 4'h0;
-//             select    = 1;
-//             while (!mem_ready) @(posedge clk);
-//             rdata = mem_rdata;
-//             @(negedge clk);
-//             mem_valid = 0;
-//             select    = 0;
-//         end
-//     endtask
-
-//     reg [31:0] got;
-
-//     initial begin
-//         rst_n     = 0;
-//         mem_valid = 0;
-//         mem_addr  = 0;
-//         mem_wdata = 0;
-//         mem_wstrb = 0;
-//         select    = 0;
-
-//         #(CLK_PERIOD * 3);
-//         rst_n = 1;
-//         #(CLK_PERIOD);
-
-//         $display("\n  === MMIO (4 tests) ===\n");
-
-//         // --- Test 1: Write and read back group 0 control register ---
-//         $display("  Test 1: W & R group 0 control register");
-//         cpu_write(MMIO_BASE + 32'h00, 32'hDEAD_BEEF);
-//         cpu_read(MMIO_BASE + 32'h00, got);
-//         if (got != 32'hDEAD_BEEF) begin
-//             $display("    FAIL: expected DEAD_BEEF, got %h", got);
-//             errors = errors + 1;
-//         end else
-//             $display("    PASS: read back DEAD_BEEF");
-
-//         // --- Test 2: W & R group 1 ifmap address ---
-//         $display("\n  Test 2: Write then read group 1 ifmap address");
-//         cpu_write(MMIO_BASE + 32'h30, 32'h0000_8000);
-//         cpu_read(MMIO_BASE + 32'h30, got);
-//         if (got != 32'h0000_8000) begin
-//             $display("    FAIL: expected 00008000, got %h", got);
-//             errors = errors + 1;
-//         end else
-//             $display("    PASS: read back 00008000");
-
-//         // --- Test 3: Read global status (address 0x7C) ---
-//         $display("\n  Test 3: Read global status register");
-//         npu_global_status = 32'h0000_0305;
-//         cpu_read(MMIO_BASE + 32'h7C, got);
-//         if (got != 32'h0000_0305) begin
-//             $display("    FAIL: expected 00000305, got %h", got);
-//             errors = errors + 1;
-//         end else
-//             $display("    PASS: read global status 00000305");
-
-//         // --- Test 4: Wn oassertion from the decoder ---
-//         $display("\n  Test 4: Ignore request when select is low");
-//         @(negedge clk);
-//         mem_valid = 1;
-//         mem_addr  = MMIO_BASE;
-//         mem_wstrb = 4'hF;
-//         mem_wdata = 32'hFFFF_FFFF;
-//         select    = 0;
-//         repeat (4) @(posedge clk);
-//         if (mem_ready) begin
-//             $display("    FAIL: bridge responded without select");
-//             errors = errors + 1;
-//         end else
-//             $display("    PASS: bridge did not respond");
-//         @(negedge clk);
-//         mem_valid = 0;
-//         mem_wstrb = 0;
-
-//         // --- Done ---
-//         #(CLK_PERIOD * 2);
-//         $display("\n  === Result: %0d of 4 tests passed ===\n", 4 - errors);
-//         if (errors != 0)
-//             $display("  FAILURE: %0d test(s) failed.", errors);
-//         else
-//             $display("  SUCCESS: All tests passed.");
-//         $finish;
-//     end
-
-// endmodule

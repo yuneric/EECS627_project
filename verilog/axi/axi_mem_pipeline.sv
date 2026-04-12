@@ -1,3 +1,4 @@
+//pipeline the inputs and output to memory.
 module axi_mem_pipeline #(
     parameter ADDR_WIDTH = 32,
     parameter DATA_WIDTH = 32
@@ -43,6 +44,7 @@ module axi_mem_pipeline #(
                 o_mem_valid <= 1'b0; 
                 ready_reg   <= 1'b1;
                 rdata_reg   <= i_mem_rdata;
+            //if memory is not valid so we could write and instruction supposed to be value and mem is ready.
             end else if (i_arb_valid && !o_mem_valid && !ready_reg) begin
                 // Launch new request. 
                 // !ready_reg blocks back-to-back writes for 1 cycle to allow arbiter's address to safely increment.

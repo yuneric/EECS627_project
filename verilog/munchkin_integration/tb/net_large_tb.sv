@@ -409,13 +409,16 @@ dunkin_donuts #(
                 // to the fmap memory
                 (FMAP_ADDR <= mem_addr && mem_addr < WGT_ADDR): begin 
                     adj_addr = mem_addr - FMAP_ADDR;
+                    //$display("fmap memaccess @%08h", mem_addr);
                     if (|mem_wstrb) begin
                         if (mem_wstrb[0]) fmap_memory[adj_addr >> 2][ 7: 0] <= mem_wdata[ 7: 0];
                         if (mem_wstrb[1]) fmap_memory[adj_addr >> 2][15: 8] <= mem_wdata[15: 8];
                         if (mem_wstrb[2]) fmap_memory[adj_addr >> 2][23:16] <= mem_wdata[23:16];
                         if (mem_wstrb[3]) fmap_memory[adj_addr >> 2][31:24] <= mem_wdata[31:24];
+                        //$display("writef @addr:%8h  data: %h", adj_addr, mem_wdata);
                     end else begin
                         mem_rdata <= fmap_memory[adj_addr >> 2];
+                        //$display("readf @addr:%8h  line: %d data: %h", adj_addr, adj_addr >> 2, mem_wdata);
                     end
                 end
 
@@ -429,6 +432,7 @@ dunkin_donuts #(
                         if (mem_wstrb[3]) wgt_memory[adj_addr >> 2][31:24] <= mem_wdata[31:24];
                     end else begin
                         mem_rdata <= wgt_memory[adj_addr >> 2];
+                        //$display("readw @addr:%8h  data: %h", adj_addr, wgt_memory[adj_addr >> 2]);
                     end
                 end
 
@@ -451,9 +455,9 @@ dunkin_donuts #(
     // Arg parsing and mem loading
     initial begin
         //dump for verdi
-        $fsdbDumpfile("net_large_tb.fsdb");
-        $fsdbDumpvars(0, net_large_tb);
-        $fsdbDumpMDA();
+        // $fsdbDumpfile("net_large_tb.fsdb");
+        // $fsdbDumpvars(0, net_large_tb);
+        // $fsdbDumpMDA();
 
         for (int j=0; j<MEM_WORDS; j++) prgm_memory[j] = 0;
         for (int j=0; j<MEM_WORDS; j++) fmap_memory[j] = 0;
@@ -470,22 +474,22 @@ dunkin_donuts #(
         $readmemh(program_memory_file, prgm_memory);
         
         //trace_file
-        if ($value$plusargs("TRACE=%s", program_trace_file)) begin
-            $display("Using trace output file: %s", program_trace_file);
-        end else begin
-            $display("Using default trace output file: trace.out");
-            program_trace_file = "trace.out";
-        end
-        trace_fd = $fopen(program_trace_file, "w");
+        // if ($value$plusargs("TRACE=%s", program_trace_file)) begin
+        //     $display("Using trace output file: %s", program_trace_file);
+        // end else begin
+        //     $display("Using default trace output file: trace.out");
+        //     program_trace_file = "trace.out";
+        // end
+        // trace_fd = $fopen(program_trace_file, "w");
         
         //mem_access file
-        if ($value$plusargs("MEMACCESS=%s", memory_access_file)) begin
-            $display("Using memory access output file: %s", memory_access_file);
-        end else begin
-            $display("Using default memory access file: mem_access.out");
-            memory_access_file = "mem_access.out";
-        end
-        mem_access_fd = $fopen(memory_access_file, "w");
+        // if ($value$plusargs("MEMACCESS=%s", memory_access_file)) begin
+        //     $display("Using memory access output file: %s", memory_access_file);
+        // end else begin
+        //     $display("Using default memory access file: mem_access.out");
+        //     memory_access_file = "mem_access.out";
+        // end
+        // mem_access_fd = $fopen(memory_access_file, "w");
 
         // Load the mem files
         fmap_memory_file = "net_large_fmap.mem";
@@ -495,7 +499,7 @@ dunkin_donuts #(
         $readmemh(wgt_memory_file, wgt_memory);
 
         // Clear the output portion of our dut fmap memory
-        for (int j=(32'h00020000 >> 2); j<(32'h0007a560 >> 2); j++) fmap_memory[j] = 0;
+        //for (int j=(32'h0001c988 >> 2); j<MEM_WORDS; j++) fmap_memory[j] = 0;
 
         rstn_sync <= 0;
         rstn_async <= 0;
@@ -507,31 +511,31 @@ dunkin_donuts #(
 
    
     // Flight Data Recorder (Trace)
-    initial begin
-        repeat (10) @(posedge clk_sys);
-        while (!trap) begin
-            @(posedge clk_sys);
-            if (trace_valid)
-                $fwrite(trace_fd, "%x\n", trace_data);
-        end
-        $fclose(trace_fd);
-    end
+    // initial begin
+    //     repeat (10) @(posedge clk_sys);
+    //     while (!trap) begin
+    //         @(posedge clk_sys);
+    //         if (trace_valid)
+    //             $fwrite(trace_fd, "%x\n", trace_data);
+    //     end
+    //     $fclose(trace_fd);
+    // end
 
     // Memory Access Logger
-    initial begin
-        repeat (10) @(posedge clk_sys);
-        while (!trap) begin
-            @(posedge clk_sys);
-            if (mem_valid && mem_ready) begin
-                if (|mem_wstrb) begin
-                    $fwrite(mem_access_fd, "WRITE: Addr=%08x, Data=%08x, Strb=%b\n", mem_addr, mem_wdata, mem_wstrb);
-                end else begin
-                    $fwrite(mem_access_fd, "READ:  Addr=%08x, Data=%08x\n", mem_addr, mem_rdata);
-                end
-            end
-        end
-        $fclose(mem_access_fd);
-    end
+    // initial begin
+    //     repeat (10) @(posedge clk_sys);
+    //     while (!trap) begin
+    //         @(posedge clk_sys);
+    //         if (mem_valid && mem_ready) begin
+    //             if (|mem_wstrb) begin
+    //                 $fwrite(mem_access_fd, "WRITE: Addr=%08x, Data=%08x, Strb=%b\n", mem_addr, mem_wdata, mem_wstrb);
+    //             end else begin
+    //                 $fwrite(mem_access_fd, "READ:  Addr=%08x, Data=%08x\n", mem_addr, mem_rdata);
+    //             end
+    //         end
+    //     end
+    //     $fclose(mem_access_fd);
+    // end
 
     int num_errors;
 
@@ -542,6 +546,7 @@ dunkin_donuts #(
             output_fd = $fopen("net_large_fmap_dut.mem", "w");
             num_errors = 0;
             for(int word = 0; word < MEM_WORDS; word +=1 ) begin
+            // for(int word = 0; word < ((32'h20051000 - FMAP_ADDR) >> 2); word +=1 ) begin
                 $fwrite(output_fd, "%h\n", fmap_memory[word]);
                 if(fmap_memory[word] !== fmap_memory_clean[word]) begin
                     num_errors += 1;
@@ -560,7 +565,7 @@ dunkin_donuts #(
 
     // Timeout failsafe
     initial begin
-        #50000000;
+        #90000000;
         $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end

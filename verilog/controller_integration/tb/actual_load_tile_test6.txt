@@ -1,8 +1,1 @@
-word_0: fefcfe02fc01fffe
-word_1: 0000000000000000
-word_2: fd0203fcfd00fcff
-word_3: 0000000000000000
-word_4: fc0301fdfffc01fe
-word_5: 00000000000000fe
-word_6: fcff010100fe01fe
-word_7: 0000000000000001
+word_0: fc01fffefc01fffe

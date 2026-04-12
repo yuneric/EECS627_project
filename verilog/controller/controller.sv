@@ -298,7 +298,7 @@ module controller #(
                         o_mmu_tile_stride       <= '0;
                         o_mmu_addr              <= npu_weight_addr;
                     end else begin
-                        mmu_state <= MMU_IDLE;
+                        mmu_state               <= MMU_IDLE;
                         o_mmu_N                 <= '0;
                         o_mmu_H                 <= '0;
                         o_mmu_W                 <= '0;

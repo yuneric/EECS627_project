@@ -63,6 +63,7 @@ module mmio #(
     output logic                 o_npu_load_weights_start,
 
     // output [2:0]                 o_npu_cmd,
+    output [2:0]                 o_npu_clk_sel,
     output                       o_npu_stride,
     output                       o_npu_maxpool_en,
     output                       o_npu_relu_en,
@@ -102,6 +103,7 @@ module mmio #(
     assign o_cpu_ready = mmio_ready;
 
     //assign o_npu_cmd            = mmio_regs[`COMMAND_REG][2:0];
+    assign o_npu_clk_sel        = mmio_regs[`COMP_CFG_REG][12:10];
     assign o_npu_stride         = mmio_regs[`COMP_CFG_REG][9];
     assign o_npu_padding        = mmio_regs[`COMP_CFG_REG][8:7];
     assign o_npu_maxpool_en     = mmio_regs[`COMP_CFG_REG][6];

@@ -69,9 +69,8 @@ module axi_arbiter #(
     reg  [DATA_WIDTH-1:0] int_mem_wdata;
     reg  [3:0]            int_mem_wstrb;
 
-    // ---------------------------------------------------------
+
     // Instantiate Output Pipeline Stage
-    // ---------------------------------------------------------
     axi_mem_pipeline #(
         .ADDR_WIDTH(ADDR_WIDTH),
         .DATA_WIDTH(DATA_WIDTH)

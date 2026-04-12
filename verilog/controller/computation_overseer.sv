@@ -83,9 +83,13 @@ module computation_overseer #(
     logic drain_wen; //write enable
     logic [WORD_SIZE-1:0] drain_wdata; //the 64-bit data written from the drain
     
-    //Add pipelining registers to handle 1-cycle FIFO read latency!
+    //Add pipelining registers to handle 1-cycle FIFO read latency AND 1-cycle registered pop latency!
     logic drain_wen_q;
     logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr_q;
+    
+    // NEW Pipeline Stage 1 registers
+    logic [MEM_IF_ADDR_WIDTH-1:0] curr_drain_waddr_d1;
+    logic [2:0]                   drain_curr_sa_d1;
 
     logic [2:0] drain_curr_systolic_array;
 
@@ -95,17 +99,29 @@ module computation_overseer #(
     //adding register to latch in cdc_ack and synchronize it because  give time to recover from metastability.
     logic d_cdc_ack, d1_cdc_ack;
 
-    //account for 1 cycle of latency
+    //account for latency delays (Pipeline to match data arriving from FIFO)
     always_ff @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            drain_wen_q <= '0;
-            curr_drain_waddr_q <= '0;
-            drain_wdata <= '0;
+            drain_wen_q         <= '0;
+            curr_drain_waddr_d1 <= '0;
+            curr_drain_waddr_q  <= '0;
+            drain_curr_sa_d1    <= '0;
+            drain_wdata         <= '0;
+            drain_cntr          <= '0;
         end else begin
             if(state == WAIT_FOR_DRAIN) begin
                 //want to reset drain_cntr here:
                 drain_cntr <= '0;
             end else begin
+                // ---------------------------------------------------------
+                // PIPELINE STAGE 1: Align Address/Index with delayed o_pop_en
+                // ---------------------------------------------------------
+                curr_drain_waddr_d1 <= curr_drain_waddr;
+                drain_curr_sa_d1    <= drain_curr_systolic_array;
+
+                // ---------------------------------------------------------
+                // PIPELINE STAGE 2: Data Return & Final Memory Write
+                // ---------------------------------------------------------
                 //accounts for the cycle latency.
                 //if not then don't want to set write_enable.
                 if(!same_sa_slice_one_cycle_delay) begin
@@ -114,12 +130,17 @@ module computation_overseer #(
                     drain_wen_q <= '0;
                 end
 
-                curr_drain_waddr_q <= curr_drain_waddr;
+                // Shift the delayed address into the final output register
+                curr_drain_waddr_q <= curr_drain_waddr_d1;
             
+                // Update counter using the delayed SA index to ensure we 
+                // count the correct array when drain_wen fires.
                 if (drain_wen && !same_sa_slice_one_cycle_delay) begin
                     //so this increments when we feed out comp_wen.
-                    drain_cntr[drain_curr_systolic_array] <= drain_cntr[drain_curr_systolic_array] + 1; 
+                    drain_cntr[drain_curr_sa_d1] <= drain_cntr[drain_curr_sa_d1] + 1; 
                 end
+                
+                // Data arriving from FIFO natively aligns here
                 drain_wdata <= i_pop_data;
             end
         end
@@ -433,22 +454,31 @@ module computation_overseer #(
         end
     end
 
-    // Combinational block for o_pop_en and drain_wen
-    always_comb begin
-        o_pop_en = '0;
-        drain_wen = '0;
+    // =========================================================================
+    // Registered Output Control Logic (Fixes Timing Violations)
+    // =========================================================================
+    always_ff @(posedge i_clk or negedge i_rst_n) begin
+        if(!i_rst_n) begin
+            o_pop_en  <= '0;
+            drain_wen <= '0;
+        end else begin
+            // 1. DEFAULT CLEAR: Prevents the "sticky bit" / latching bug.
+            // All bits default to 0 unless explicitly set below.
+            o_pop_en  <= '0;
+            drain_wen <= '0;
 
-        if(state == DRAIN) begin
-            // 1. o_pop_en ALWAYS goes high, even during the stall cycle
-            //want to turn it off cause only on for 8 cycles.
-            if(num_kernels_per_group <= 8 && next_state != DRAIN) begin
-                o_pop_en[drain_curr_systolic_array] = 1'b0;
-            end else begin
-                o_pop_en[drain_curr_systolic_array] = 1'b1;
+            // 2. CLEAN TIMING: Only rely on current state, using next_state logic 
+            // calculated in the always_comb block to keep timing paths incredibly short.
+            if(state == DRAIN) begin
+                
+                if(num_kernels_per_group <= 8 && next_state != DRAIN) begin
+                    o_pop_en[drain_curr_systolic_array] <= 1'b0;
+                end else begin
+                    o_pop_en[drain_curr_systolic_array] <= 1'b1;
+                end
+                
+                drain_wen <= 1'b1;
             end
-            
-            drain_wen = 1'b1;
-     
         end
     end
 
