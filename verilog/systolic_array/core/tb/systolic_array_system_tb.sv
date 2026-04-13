@@ -22,8 +22,8 @@ module systolic_array_system_tb;
     initial clk_tb = 0;
     initial clk_sa = 0;
     
-    always #3.1 if (clk_en) clk_tb = ~clk_tb;  
-    always #3.1 if (clk_en) clk_sa = ~clk_sa;
+    always #(`CLK_PERIOD_SYS_HALF) if (clk_en) clk_tb = ~clk_tb;  
+    always #(`CLK_PERIOD_SA_HALF) if (clk_en) clk_sa = ~clk_sa;
 
     logic  [ACT_VEC_W-1:0]    input_act_wr_data;
     logic  [ACT_VEC_W-1:0]    input_weight_wr_data;
@@ -101,52 +101,48 @@ module systolic_array_system_tb;
 
 
     async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_act_fifo (
+        .i_rst_n   (rst_n),
         .i_wr_clk  (clk_tb),
-        .i_wr_rst_n(rst_n),
         .i_wr_data (input_act_wr_data),
         .i_wr_en   (input_wr_en),
         .o_wr_almost_full(act_fifo_full),  // use almost full so we dont have overrun
         .i_rd_clk  (clk_sa),
-        .i_rd_rst_n(rst_n),
         .o_rd_data (act_rd_data),
         .i_rd_en   (data_rd_en),
         .o_rd_almost_empty(act_fifo_empty) // use almost ready so we dont underrun
     );
 
     async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_weight_fifo (
+        .i_rst_n   (rst_n),
         .i_wr_clk  (clk_tb),
-        .i_wr_rst_n(rst_n),
         .i_wr_data (input_weight_wr_data),
         .i_wr_en   (input_wr_en),
         .o_wr_almost_full(weight_fifo_full),
         .i_rd_clk  (clk_sa),
-        .i_rd_rst_n(rst_n),
         .o_rd_data (weight_rd_data),
         .i_rd_en   (data_rd_en),
         .o_rd_almost_empty(weight_fifo_empty)
     );
 
     async_fifo #(.WIDTH(1), .DEPTH(FIFO_DEPTH)) u_info_fifo (
+        .i_rst_n   (rst_n),
         .i_wr_clk  (clk_tb),
-        .i_wr_rst_n(rst_n),
         .i_wr_data (input_data_last),
         .i_wr_en   (input_wr_en),
         .o_wr_almost_full(info_fifo_full),
         .i_rd_clk  (clk_sa),
-        .i_rd_rst_n(rst_n),
         .o_rd_data (info_rd_data),
         .i_rd_en   (data_rd_en),
         .o_rd_almost_empty(info_fifo_empty)
     );
 
     async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_output_fifo (
+        .i_rst_n   (rst_n),
         .i_wr_clk  (clk_sa),
-        .i_wr_rst_n(rst_n),
         .i_wr_data (output_wr_data),
         .i_wr_en   (output_valid),
         .o_wr_almost_full(output_fifo_full),
         .i_rd_clk  (clk_tb),
-        .i_rd_rst_n(rst_n),
         .o_rd_data (output_rd_data),
         .i_rd_en   (output_rd_en),
         .o_rd_empty(output_rd_empty)
@@ -183,6 +179,8 @@ module systolic_array_system_tb;
     initial begin
         $dumpfile("tb_systolic_system.vcd");
         $dumpvars(0, systolic_array_system_tb);
+        $display("clk_tb: %f ns", `CLK_PERIOD_SYS_HALF);
+        $display("clk_sa: %f ns", `CLK_PERIOD_SA_HALF);
 
         //$sdf_annotate("systolic_array_system.apr.sdf", dut);
 
@@ -243,6 +241,7 @@ module systolic_array_system_tb;
             $readmemh(golden_filename, golden_out);
 
             // Parse config
+            @(posedge clk_sa);
             relu_en         = config_data[1][0];
             shift_by        = config_data[2][SHIFT_WIDTH-1:0];
             maxpool_en      = config_data[3][0];

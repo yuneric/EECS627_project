@@ -48,9 +48,10 @@ module sa_slice #(
     logic                 info_fifo_rdata;
     
     // bank mux between reading weights for compute and programming weights for MMU
-    logic [WT_ADDR_WIDTH-1:0]        weight_sram_addr;
-    logic [WORD_SIZE-1:0] weight_sram_rdata;
-    logic [WORD_SIZE-1:0] weight_sram_wrdata;
+    wire                        weight_sram_cen_n, weight_sram_wen_n;
+    wire [WT_ADDR_WIDTH-1:0]    weight_sram_addr;
+    wire [WORD_SIZE-1:0]        weight_sram_rdata;
+    wire [WORD_SIZE-1:0]        weight_sram_wrdata;
 
     //assign weight_sram_wr_en = i_wt_sram_wr_en;
     //assign weight_sram_rd_en = i_wt_sram_rd_en;
@@ -138,8 +139,9 @@ module sa_slice #(
         .POP_SYNC(2),
         .RST_MODE(0)
     ) u_weight_act_info_fifo (
+        .i_rst_n       (i_rst_n),
+
         .i_wr_clk         (i_clk_sys),
-        .i_wr_rst_n       (i_rst_n),
         //.i_wr_data        (i_push_act_data),
         .i_wr_data        (input_fifo_wdata),
         .i_wr_en          (staged_push_en),
@@ -150,7 +152,6 @@ module sa_slice #(
         .o_wr_full        (),
 
         .i_rd_clk         (i_clk_sa),
-        .i_rd_rst_n       (i_rst_n),
         .o_rd_data        (input_fifo_rdata),
         .i_rd_en          (fifo_pop_en),
         .o_rd_empty       (),
@@ -172,10 +173,14 @@ module sa_slice #(
         cdc_req2 <= cdc_req1;
         cdc_req1 <= i_cdc_req;
 
-        // Perform Handshake
+        // Perform feedback
         cdc_ack1 <= 0;
-        if(cdc_req2 & !cdc_ack1) begin
+        if(cdc_req2) begin
             cdc_ack1 <= 1;
+        end
+
+        // Generate a load enable signal
+        if(cdc_req2 & !cdc_ack1) begin
             internal_relu_en <= i_relu_en;
             internal_maxpool_en <= i_maxpool_en;
             internal_shift_by <= i_shift_by;
@@ -184,8 +189,8 @@ module sa_slice #(
 
     always_ff @(posedge i_clk_sys) begin
         // Syncronization of ACK
+        cdc_ack2  <= cdc_ack1;
         o_cdc_ack <= cdc_ack2;
-        cdc_ack2 <= cdc_ack1;
     end
 
     // SA TO OUTPUT BUFFER
@@ -252,8 +257,9 @@ module sa_slice #(
         .POP_SYNC(2),
         .RST_MODE(0)
     ) u_output_fifo (
+        .i_rst_n          (i_rst_n),
+
         .i_wr_clk         (i_clk_sa),
-        .i_wr_rst_n       (i_rst_n),
         .i_wr_data        (final_out),
         .i_wr_en          (final_valid),
         .o_wr_empty       (),
@@ -263,7 +269,6 @@ module sa_slice #(
         .o_wr_full        (),
 
         .i_rd_clk         (i_clk_sys),
-        .i_rd_rst_n       (i_rst_n),
         .o_rd_data        (pop_data),
         .i_rd_en          (i_pop_en),
         .o_rd_empty       (pop_empty),

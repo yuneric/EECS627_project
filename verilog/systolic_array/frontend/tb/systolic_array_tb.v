@@ -59,7 +59,7 @@ module systolic_array_tb;
 
     initial begin
         clk = 0;
-        forever #(CLK_PERIOD/2) clk = ~clk;
+        forever #(`CLK_PERIOD_SA_HALF) clk = ~clk;
     end
 
     initial begin

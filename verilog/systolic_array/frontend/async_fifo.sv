@@ -11,9 +11,10 @@ module async_fifo #(
     parameter POP_SYNC = 2,
     parameter RST_MODE = 0
 )(
+    input              i_rst_n,
+
     // Write clock domain
     input              i_wr_clk,
-    input              i_wr_rst_n,
     input  [WIDTH-1:0] i_wr_data,
     input              i_wr_en,
     output             o_wr_empty,
@@ -24,7 +25,6 @@ module async_fifo #(
 
     // Read clock domain
     input              i_rd_clk,
-    input              i_rd_rst_n,
     output [WIDTH-1:0] o_rd_data,
     input              i_rd_en,
     output             o_rd_empty,
@@ -50,7 +50,7 @@ module async_fifo #(
     u_dw_fifo (
         .clk_push(i_wr_clk), 
         .clk_pop(i_rd_clk),
-        .rst_n(i_wr_rst_n), 
+        .rst_n(i_rst_n), 
         .push_req_n(~i_wr_en),
         .pop_req_n(~i_rd_en), 
         .data_in(i_wr_data),

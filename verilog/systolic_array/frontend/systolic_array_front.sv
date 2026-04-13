@@ -87,7 +87,7 @@ module systolic_array_front #(
     assign o_sa_drain = sa_drain;
 
     // typedef enum {IDLE, COMPUTE, DATA_STALL, PROPAGATE, DRAIN} ctrl_state_t;
-    typedef enum logic [2:0] {IDLE, COMPUTE_IDLE, COMPUTE, COMPUTE_LAST, PROPAGATE, DRAIN} ctrl_state_t;
+    typedef enum logic [3:0] {IDLE, COMPUTE_IDLE, COMPUTE_WAIT, COMPUTE, COMPUTE_LAST, PROPAGATE, DRAIN} ctrl_state_t;
     ctrl_state_t ctrl_state;
 
     // top level control fsm
@@ -129,7 +129,7 @@ module systolic_array_front #(
                     if(i_fifo_data_available) begin
                         // Start a tile if data is available
                         o_fifo_rd_en <= 1; // set this to start the data stream
-                        ctrl_state <= COMPUTE;
+                        ctrl_state <= COMPUTE_WAIT;
                     end else begin
                         ctrl_state <= IDLE;
                     end
@@ -142,24 +142,33 @@ module systolic_array_front #(
                     if(i_fifo_data_available) begin
                         // start another stream if new data has arrived
                         o_fifo_rd_en      <= 1; // set this to start the data stream
-                        ctrl_state <= COMPUTE;
+                        ctrl_state <= COMPUTE_WAIT;
                     end else begin
                         ctrl_state <= COMPUTE_IDLE;
                     end
+                end
+
+                // Need this extra state for the added reg between sa and fifo
+                COMPUTE_WAIT : begin
+                    ser_shift       <= 1;
+                    sa_compute_en   <= 1;
+                    o_fifo_rd_en    <= 1; // Get the reads goin
+                    ctrl_state <= COMPUTE;
                 end
 
                 COMPUTE : begin
                     sa_compute_en   <= 1;
                     ser_shift       <= 1;
                     ser_load        <= 1;
-                    o_fifo_rd_en      <= 1;
+                    o_fifo_rd_en    <= 1;
                     ser_load_idx    <= ser_load_idx_next; // Delay it by a cycle
                     ser_load_idx_next <= ser_load_idx_next + 1;
                     act_rd_data_staged <= i_fifo_act_data;
                     weight_rd_data_staged <= i_fifo_weight_data;
                     ctrl_state <= COMPUTE;
                     if(ser_load_idx_next == ARRAY_SIZE - 2) begin
-                        // were on the last piece of data for this 8
+                        // we're on the last piece of data for this 8
+                        o_fifo_rd_en <= 0;
                         ctrl_state <= COMPUTE_LAST;
                     end 
                 end
@@ -168,7 +177,7 @@ module systolic_array_front #(
                     sa_compute_en   <= 1;
                     ser_shift       <= 1;
                     ser_load        <= 1;
-                    o_fifo_rd_en      <= 0; // stop data stream
+                    o_fifo_rd_en    <= 0; // stop data stream
                     ser_load_idx    <= ser_load_idx_next;
                     ser_load_idx_next <= 0;
                     act_rd_data_staged <= i_fifo_act_data;
@@ -178,7 +187,7 @@ module systolic_array_front #(
                         ctrl_state <= PROPAGATE;
                     end else if(i_fifo_data_available) begin
                         o_fifo_rd_en <= 1; // set this to start the next data stream
-                        ctrl_state <= COMPUTE; // do another 8 reads
+                        ctrl_state <= COMPUTE_WAIT; // do another 8 reads
                     end else begin
                         ctrl_state <= COMPUTE_IDLE;
                     end

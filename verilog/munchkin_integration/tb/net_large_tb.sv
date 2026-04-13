@@ -499,7 +499,7 @@ dunkin_donuts #(
         $readmemh(wgt_memory_file, wgt_memory);
 
         // Clear the output portion of our dut fmap memory
-        //for (int j=(32'h0001c988 >> 2); j<MEM_WORDS; j++) fmap_memory[j] = 0;
+        for (int j=(32'h00017a20 >> 2); j<MEM_WORDS; j++) fmap_memory[j] = 0;
 
         rstn_sync <= 0;
         rstn_async <= 0;
@@ -565,7 +565,7 @@ dunkin_donuts #(
 
     // Timeout failsafe
     initial begin
-        #90000000;
+        #100000000;
         $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end

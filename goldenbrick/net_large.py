@@ -22,12 +22,12 @@ class LGNet():
         self.stride_l1  = 1
         self.padding_l1 = 0
         self.scale_l1   = 6
-        self.weights_l1 = np.random.randint(-4, 5, (16, 16, 16, 8), dtype=np.int8)
+        self.weights_l1 = np.random.randint(-4, 5, (16, 15, 15, 8), dtype=np.int8)
 
         self.stride_l2  = 1
         self.padding_l2 = 0
         self.scale_l2   = 5
-        self.weights_l2 = np.random.randint(-4, 5, (32, 11, 11, 16), dtype=np.int8)
+        self.weights_l2 = np.random.randint(-4, 5, (32, 9, 9, 16), dtype=np.int8)
 
         self.stride_l3  = 2
         self.padding_l3 = 0
@@ -35,7 +35,7 @@ class LGNet():
         self.weights_l3 = np.random.randint(-4, 5, (64, 6, 6, 32), dtype=np.int8)
 
         self.stride_l4  = 1
-        self.padding_l4 = 0
+        self.padding_l4 = 1
         self.scale_l4   = 3
         self.weights_l4 = np.random.randint(-4, 5, (64, 3, 3, 64), dtype=np.int8)
 
@@ -49,32 +49,32 @@ class LGNet():
         self.input_image = input_image
 
         # Layer 1 Dataflow: Conv -> ReLU -> Requantize
-        # input HWC:    121x121x8
-        # weights NHWC: 16x16x16x8
-        # output HWC:   106x106x16
+        # input HWC:    110x110x8
+        # weights NHWC: 16x15x15x8
+        # output HWC:   96x96x16
         self.output_l1 = do_cnn_layer(ifmap=self.input_image, kernels=self.weights_l1, stride=self.stride_l1, padding=self.padding_l1)
         self.output_l1 = relu(self.output_l1)
         self.output_l1 = scale_clip_real(mat=self.output_l1, shift=self.scale_l1, out_bits=8).astype(np.int8)
         
         # Layer 2 Dataflow: Conv -> ReLU -> Requantize -> Pool
-        # input HWC:    106x106x16
-        # weights NHWC: 32x11x11x16
-        # output HWC:   96x96x32 -> 48x48x32
+        # input HWC:    96x96x16
+        # weights NHWC: 32x9x9x16
+        # output HWC:   88x88x32 -> 44x44x32
         self.output_l2 = do_cnn_layer(ifmap=self.output_l1, kernels=self.weights_l2, stride=self.stride_l2, padding=self.padding_l2)
         self.output_l2 = relu(self.output_l2)
         self.output_l2 = scale_clip_real(mat=self.output_l2, shift=self.scale_l2, out_bits=8)
         self.output_l2 = maxpool_real(self.output_l2).astype(np.int8)
         
         # Layer 3 Dataflow: Conv -> ReLU -> Requantize
-        # input HWC:    48x48x32
+        # input HWC:    44x44x32
         # weights NHWC: 64x6x6x32
-        # output HWC:   22x22x64
+        # output HWC:   20x20x64
         self.output_l3 = do_cnn_layer(ifmap=self.output_l2, kernels=self.weights_l3, stride=self.stride_l3, padding=self.padding_l3)
         self.output_l3 = relu(self.output_l3)
         self.output_l3 = scale_clip_real(mat=self.output_l3, shift=self.scale_l3, out_bits=8).astype(np.int8)
         
         # Layer 4 Dataflow: Conv -> ReLU -> Requantize -> Pool
-        # input HWC:    22x22x64
+        # input HWC:    20x20x64 -> (padding) 22x22x64
         # weights NHWC: 64x3x3x64
         # output HWC:   20x20x64 -> 10x10x64
         self.output_l4 = do_cnn_layer(ifmap=self.output_l3, kernels=self.weights_l4, stride=self.stride_l4, padding=self.padding_l4)
@@ -139,6 +139,55 @@ class LGNet():
             print(f'Output layer 5 address start: 0x{layer4_output_address:08x} line #: {(layer4_output_address-input_mem_base)//4+1:0d} Shape: {self.output_l5.shape} Size: {self.output_l5.nbytes / 1024:.2f} kB')
             layer5_output_address = self.write_mem(self.output_l5, file) + layer4_output_address
         
+    def print_c_struct(self, out_tile_bases=[40, 30, 11, 10, 8]):
+        
+        if not hasattr(self, 'output_l5'):
+            print("Error: You must call run() before printing the struct.")
+            return
+
+        # Helper to calculate the byte size of a matrix with padded channels
+        def get_padded_size(shape):
+            c = shape[-1]
+            padded_c = c if c % 8 == 0 else c + (8 - (c % 8))
+            elements = 1
+            for dim in shape[:-1]:
+                elements *= dim
+            return elements * padded_c
+
+        layers = [
+            {'in': self.input_image, 'out': self.output_l1, 'w': self.weights_l1, 'stride': self.stride_l1, 'pad': self.padding_l1, 'scale': self.scale_l1, 'relu': 'true', 'pool': 'false'},
+            {'in': self.output_l1,  'out': self.output_l2, 'w': self.weights_l2, 'stride': self.stride_l2, 'pad': self.padding_l2, 'scale': self.scale_l2, 'relu': 'true', 'pool': 'true'},
+            {'in': self.output_l2,  'out': self.output_l3, 'w': self.weights_l3, 'stride': self.stride_l3, 'pad': self.padding_l3, 'scale': self.scale_l3, 'relu': 'true', 'pool': 'false'},
+            {'in': self.output_l3,  'out': self.output_l4, 'w': self.weights_l4, 'stride': self.stride_l4, 'pad': self.padding_l4, 'scale': self.scale_l4, 'relu': 'true', 'pool': 'true'},
+            {'in': self.output_l4,  'out': self.output_l5, 'w': self.weights_l5, 'stride': self.stride_l5, 'pad': self.padding_l5, 'scale': self.scale_l5, 'relu': 'true', 'pool': 'false'}
+        ]
+
+        curr_in_addr = input_mem_base
+        curr_w_addr = weight_mem_base
+        
+        print("    LayerConfig network[5] = {")
+        
+        for i, l in enumerate(layers):
+            hi, wi, ci = l['in'].shape
+            co, hf, wf, _ = l['w'].shape
+            ho, wo, _ = l['out'].shape
+            
+            w_size = get_padded_size(l['w'].shape)
+            in_size = get_padded_size(l['in'].shape)
+            
+            curr_out_addr = curr_in_addr + in_size
+            tile_base = out_tile_bases[i] if i < len(out_tile_bases) else 10
+            
+            print(f"        // Layer {i+1}")
+            print(f"        {{{hi:<3}, {wi:<3}, {ci:<2},  {hf:<2}, {wf:<2}, {co:<3},  {ho:<3}, {wo:<3}, {l['scale']}, {l['stride']}, {l['pad']}, {l['relu']}, {l['pool']:<5}, {tile_base:2},")
+            print(f"         0x{curr_w_addr:08x}, 0x{curr_in_addr:08x}, 0x{curr_out_addr:08x}}}" + ("," if i < len(layers)-1 else ""))
+            
+            # Update pointers for the next layer
+            curr_w_addr += w_size
+            curr_in_addr = curr_out_addr
+
+        print("    };\n")
+
 def run_and_export(model, image_size, model_name):
     print(f"--- Running {model_name} ---")
     
@@ -155,8 +204,11 @@ def run_and_export(model, image_size, model_name):
     print()
     model.make_weight_mem_files('net_large_wgt.mem')
 
+    # 4. Generate C Struct
+    model.print_c_struct()
+
 # Instantiate models
 large_net = LGNet()
 
 # Run Small Net with 128x128 image
-run_and_export(large_net, image_size=121, model_name="LGNet")
+run_and_export(large_net, image_size=110, model_name="LGNet")

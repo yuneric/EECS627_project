@@ -11,7 +11,7 @@ module sa_slice_tb;
     parameter SHIFT_WIDTH  = 5;
     parameter INPUT_FIFO_DEPTH   = 16; 
     parameter OUTPUT_FIFO_DEPTH   = 8; 
-    parameter NUM_TESTS    = 14;
+    parameter NUM_TESTS    = 114;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
     localparam int ACT_VEC_W = DATA_WIDTH * ARRAY_SIZE;
@@ -45,10 +45,10 @@ module sa_slice_tb;
     logic [DW-1:0]                    wt_wr_data;
 
     initial clk_sys = 0;
-    always #3.0 clk_sys = ~clk_sys;
+    always #(`CLK_PERIOD_SYS_HALF) clk_sys = ~clk_sys;
 
     initial clk_sa = 0;
-    always #3.0 clk_sa = ~clk_sa;
+    always #(`CLK_PERIOD_SA_HALF) clk_sa = ~clk_sa;
 
     sa_slice #(
         .PSUM_WIDTH         (PSUM_WIDTH),
@@ -147,52 +147,48 @@ module sa_slice_tb;
         $display("  Config: relu=%0d, shift=%0d, maxpool=%0d, expect %0d output rows data_len=%0d",
                  relu_en, shift_by, maxpool_en, num_output_rows, data_len);
 
-        rst_n       = 0;
-        push_act_data = '0;
-        push_data_last   = 0;
-        push_en       = 0;
-        pop_en      = 0;
-        wt_rd_addr        = '0;
-        wt_rd_en          = 0;
-        wt_wr_addr        = '0;
-        wt_wr_en          = 0;
-        wt_wr_data        = '0;
+        rst_n           = 0;
+        push_act_data   = '0;
+        push_data_last  = 0;
+        push_en         = 0;
+        pop_en          = 0;
+        wt_rd_addr      = '0;
+        wt_rd_en        = 0;
+        wt_wr_addr      = '0;
+        wt_wr_en        = 0;
+        wt_wr_data      = '0;
 
-        @(negedge clk_sys);
         repeat (10) @(posedge clk_sys);
         repeat (10) @(posedge clk_sa);
-        @(posedge clk_sys);
         rst_n = 1;
         repeat (3) @(posedge clk_sys);
         repeat (3) @(posedge clk_sa);
+
         for (int r = 0; r < data_len; r++) begin
-            @(negedge clk_sys);
+            @(posedge clk_sys);
             write_weight(r, {DW{1'b0}});
         end
-        @(posedge clk_sys);
         for (int r = 0; r < data_len; r++) begin
-            @(negedge clk_sys);
+            @(posedge clk_sys);
             write_weight(r, weight_data[r]);
         end
-        @(negedge clk_sys);
+
         for (int r = 0; r < data_len ; r++) begin
-            @(negedge clk_sys);
+            @(posedge clk_sys);
             wt_rd_en = 1'b1;
             wt_rd_addr = r;
-            @(negedge clk_sys);
-            @(negedge clk_sys);
             //$display("SRAM[%0d] = %h  (wrote %h)", r, dut.weight_sram_rdata, weight_data[r]);
         end
 
         // Do the cdc handshake for the backend signals
-        @(negedge clk_sys)
+        @(posedge clk_sys);
         cdc_req = 1;
         wait(cdc_ack);
-        @(negedge clk_sys)
+        @(posedge clk_sys)
         cdc_req = 0;
         wait(~cdc_ack);
 
-        @(negedge clk_sys);
+        @(posedge clk_sys);
         wt_rd_en = 1'b0;
         write_idx   = 0;
         capture_idx = 0;
@@ -204,31 +200,31 @@ module sa_slice_tb;
                 repeat (10) @(posedge clk_sys);
             end
 
-            @(negedge clk_sys);
+            @(posedge clk_sys);
+            #1;
             wt_rd_en   = 1'b1;
             wt_rd_addr = write_idx;
             @(posedge clk_sys);
 
-            @(negedge clk_sys);
+            @(posedge clk_sys);
+            #1;
+
             if (!push_af) begin
                 push_act_data = act_data[write_idx];
                 push_data_last   = (write_idx == data_len - 1) ? 1'b1 : 1'b0;
                 push_en       = 1'b1;
 
-                //$display("  [cycle %0t] PUSH[%0d]: act=%h  wt_staged=%h",
+                // $display("  [time %0t] PUSH[%0d]: act=%h  wt_staged=%h",
                 //        $time, write_idx, act_data[write_idx], dut.staged_weight_data);
 
-
-                @(posedge clk_sys);
-                @(negedge clk_sys);
-                push_en     = 1'b0;
-                push_data_last = 1'b0;
                 write_idx = write_idx + 1;
             end else begin
-                push_en     = 1'b0;
-                push_data_last = 1'b0;
-                $display("  [cycle %0t] FIFO full, stalling write %0d", $time, write_idx);
+                $display("  [time %0t] FIFO full, stalling write %0d", $time, write_idx);
             end
+            @(posedge clk_sys);
+            #1;
+            push_en     = 1'b0;
+            push_data_last = 1'b0;
         end
 
         @(negedge clk_sys);
@@ -301,6 +297,8 @@ module sa_slice_tb;
     initial begin
         $dumpfile("tb_sa_slice.vcd");
         $dumpvars(0, sa_slice_tb);
+        $display("clk_tb: %f ns", `CLK_PERIOD_SYS_HALF);
+        $display("clk_sa: %f ns", `CLK_PERIOD_SA_HALF);
 
         total_pass = 0;
         total_fail = 0;
@@ -332,6 +330,12 @@ module sa_slice_tb;
         else
             $display("*** ALL TESTS PASSED ***");
 
+        $finish;
+    end
+
+    initial begin
+        #50000000;
+        $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end
 
