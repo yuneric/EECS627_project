@@ -59,6 +59,7 @@ module munchkin #(
     // Systolic array ports
     //   Top Slices
     //     Config
+    output [2:0]                     o_clk_sel   ,
     output                           o_cdc_req   ,
     input  [`NUM_ARRAYS-1:0]         i_cdc_ack   ,
     output                           o_relu_en   ,
@@ -291,6 +292,7 @@ module munchkin #(
         .o_cpu_rdata(mmio_rdata), 
 
         // Computation overseer connections
+        .o_comp_clk_sel          (o_clk_sel           ),
         .o_comp_compute_start    (comp_compute_start  ), 
         .i_comp_done             (comp_done           ),
         .o_comp_stride           (comp_stride         ),

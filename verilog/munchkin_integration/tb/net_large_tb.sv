@@ -17,7 +17,7 @@ module net_large_tb;
 
     parameter PSUM_WIDTH        = 32;
     parameter SHIFT_WIDTH       = 5;
-    parameter INPUT_FIFO_DEPTH  = 16; 
+    parameter INPUT_FIFO_DEPTH  = 64; 
     parameter INPUT_FIFO_AF_LVL = 5; // needs 4 pushes of headsup
     parameter OUTPUT_FIFO_DEPTH = 8; 
 

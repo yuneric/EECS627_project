@@ -13,6 +13,7 @@ module controller #(
     output                        o_cpu_ready,
     output      [DATA_WIDTH-1:0]  o_cpu_rdata,
 
+    output wire  [2:0]            o_comp_clk_sel          ,
     output logic                  o_comp_compute_start    ,
     output logic [1:0]            o_comp_stride           ,
     output logic [1:0]            o_comp_padding          ,
@@ -110,6 +111,7 @@ module controller #(
         .o_npu_store_tile_start     (store_tile_start   ),
         .o_npu_load_weights_start   (load_weights_start ),
 
+        .o_npu_clk_sel      (o_comp_clk_sel   ),
         .o_npu_stride       (npu_stride       ),
         .o_npu_padding      (npu_padding      ),
         .o_npu_maxpool_en   (npu_maxpool_en   ),

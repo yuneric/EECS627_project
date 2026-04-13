@@ -8,7 +8,8 @@ module sa_slice #(
     parameter OUTPUT_FIFO_DEPTH = 8 
 )(
     input  logic                     i_clk_sys,   // system-side clock (FIFO write / controller domain)
-    input  logic                     i_clk_sa,    // systolic array-side clock (FIFO read / frontend / backend)
+//    input  logic                     i_clk_sa,    // systolic array-side clock (FIFO read / frontend / backend)
+    input  logic [2:0]               i_clk_sel, 
     input  logic                     i_rst_n,
 
     // Backend control (all of these signals need proper cdc)
@@ -42,6 +43,18 @@ module sa_slice #(
 
 );
 
+    // Clock generator for this slice
+    wire clk_sa;
+
+    clk_gen u_clk_gen (
+        .rstn_i     (i_rst_n),
+        .bypass_i   (1'b0),
+        .clk_i      (i_clk_sys),
+        .osc_sel_i  (i_clk_sel),
+        .div_sel_i  (4'b0000),
+        .clk_o      (clk_sa),
+        .slow_clk_o ()
+    );
 
     logic [WORD_SIZE-1:0] act_fifo_rdata;
     logic [WORD_SIZE-1:0] weight_fifo_rdata;
@@ -151,7 +164,7 @@ module sa_slice #(
         .o_wr_almost_full (input_fifo_af),
         .o_wr_full        (),
 
-        .i_rd_clk         (i_clk_sa),
+        .i_rd_clk         (clk_sa),
         .o_rd_data        (input_fifo_rdata),
         .i_rd_en          (fifo_pop_en),
         .o_rd_empty       (),
@@ -168,7 +181,7 @@ module sa_slice #(
     logic cdc_req1, cdc_req2;
     logic cdc_ack1, cdc_ack2;
     
-    always_ff @(posedge i_clk_sa) begin
+    always_ff @(posedge clk_sa) begin
         // Syncronization of REQ
         cdc_req2 <= cdc_req1;
         cdc_req1 <= i_cdc_req;
@@ -224,7 +237,7 @@ module sa_slice #(
 
     sa_sys_power u_sa_sys_power (
         // Input side
-        .i_clk                 (i_clk_sa),
+        .i_clk                 (clk_sa),
         .i_rst_n               (i_rst_n),
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
@@ -259,7 +272,7 @@ module sa_slice #(
     ) u_output_fifo (
         .i_rst_n          (i_rst_n),
 
-        .i_wr_clk         (i_clk_sa),
+        .i_wr_clk         (clk_sa),
         .i_wr_data        (final_out),
         .i_wr_en          (final_valid),
         .o_wr_empty       (),
