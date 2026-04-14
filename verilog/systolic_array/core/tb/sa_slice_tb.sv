@@ -51,11 +51,7 @@ module sa_slice_tb;
     initial clk_sys = 0;
     always #(`CLK_PERIOD_SYS_HALF) clk_sys = ~clk_sys;
 
-    initial clk_sel = 3'b000;
-
-    initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen.syn.sdf", dut.u_clk_gen);
-    end
+    initial clk_sel = 3'b010;
 
     // initial clk_sa = 0;
     // always #(`CLK_PERIOD_SA_HALF) clk_sa = ~clk_sa;
@@ -301,7 +297,8 @@ module sa_slice_tb;
     end
     `else
     initial begin
-        $display("[%0t] SYN not defined, no SDF annotation", $time);
+        $display("[%0t] SYN not defined, annotating clock gen only", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", dut.u_clk_gen);
     end
     `endif
 
@@ -347,7 +344,7 @@ module sa_slice_tb;
     end
 
     initial begin
-        #50000000;
+        #500000;
         $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end

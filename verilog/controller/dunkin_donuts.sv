@@ -56,6 +56,7 @@ module dunkin_donuts #(
     // ==========================================
     // Systolic array ports (Top)
     // ==========================================
+    output [2:0]                     o_top_clk_sel   ,
     output                           o_top_cdc_req   ,
     input  [(`NUM_ARRAYS/2)-1:0]     i_top_cdc_ack   , // FIXED: Now a 4-bit bus
     output                           o_top_relu_en   ,
@@ -81,6 +82,7 @@ module dunkin_donuts #(
     // ==========================================
     // Systolic array ports (Bottom)
     // ==========================================
+    output [2:0]                     o_bottom_clk_sel   ,
     output                           o_bottom_cdc_req   ,
     input  [(`NUM_ARRAYS/2)-1:0]     i_bottom_cdc_ack   , // FIXED: Now a 4-bit bus
     output                           o_bottom_relu_en   ,
@@ -107,6 +109,7 @@ module dunkin_donuts #(
     // =========================================================================
     // Internal Signals to connect to Munchkin's unified ports
     // =========================================================================
+    logic [2:0]                             munchkin_clk_sel;
     logic                                   munchkin_cdc_req;
     logic [`NUM_ARRAYS-1:0]                 munchkin_cdc_ack;
     logic                                   munchkin_relu_en;
@@ -135,6 +138,8 @@ module dunkin_donuts #(
     // =========================================================================
     
     // Config Signals
+    assign o_top_clk_sel            = munchkin_clk_sel;
+    assign o_bottom_clk_sel         = munchkin_clk_sel;
     assign o_top_cdc_req            = munchkin_cdc_req;
     assign o_bottom_cdc_req         = munchkin_cdc_req;
     assign o_top_relu_en            = munchkin_relu_en;
@@ -204,6 +209,7 @@ module dunkin_donuts #(
         .MMIO_SIZE          (MMIO_SIZE)
     ) u_munchkin (
         .i_clk              (i_clk),
+        .o_clk_sel          (munchkin_clk_sel),
         .i_rstn_sync        (i_rstn_sync),
         .i_rstn_async       (i_rstn_async),
 

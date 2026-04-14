@@ -45,12 +45,14 @@ module munchkin_integration_tb;
     parameter OUTPUT_FIFO_DEPTH = 8; 
 
     //Clock & Reset
-    logic clk_sys, clk_sa;
+    // logic clk_sys, clk_sa;
+    logic clk_sys;
     initial clk_sys = 0;
     always #`CLK_PERIOD_SYS_HALF clk_sys = ~clk_sys;
 
-    initial clk_sa = 0;
-    always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
+    // initial clk_sa = 0;
+    // always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
+    logic [2:0] clk_sel;
 
     logic rstn_sync;
     logic rstn_async;
@@ -152,6 +154,7 @@ munchkin #(
     //it will have ports that interface with mem_if, 8 SA slices, and abstracted off chip memory. 
     //so we need to think about the signals we need.
     .i_clk       (clk_sys),
+    .o_clk_sel   (clk_sel),
     .i_rstn_sync (rstn_sync),
     .i_rstn_async(rstn_async),
 
@@ -237,7 +240,8 @@ munchkin #(
                 .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
             ) dut_sa_slice (
                 .i_clk_sys         (clk_sys),
-                .i_clk_sa          (clk_sa),
+                // .i_clk_sa          (clk_sa),
+                .i_clk_sel         (clk_sel),
                 .i_rst_n           (rstn_async),
 
                 .i_cdc_req         (cdc_req),

@@ -46,14 +46,10 @@ module sa_slice #(
     // Clock generator for this slice
     wire clk_sa;
 
-    clk_gen u_clk_gen (
+    clk_gen_mode u_clk_gen (
         .rstn_i     (i_rst_n),
-        .bypass_i   (1'b0),
-        .clk_i      (i_clk_sys),
         .osc_sel_i  (i_clk_sel),
-        .div_sel_i  (4'b0000),
-        .clk_o      (clk_sa),
-        .slow_clk_o ()
+        .clk_o      (clk_sa)
     );
 
     logic [WORD_SIZE-1:0] act_fifo_rdata;

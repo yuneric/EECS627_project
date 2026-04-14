@@ -99,7 +99,15 @@ module systolic_array_system_tb;
     );
 
 
-
+    logic data_rd_en_delayed;
+    always_ff @(posedge clk_sa or negedge rst_n) begin
+        if(!rst_n) begin
+            data_rd_en_delayed <= 0;
+        end else begin
+            data_rd_en_delayed <= data_rd_en;
+        end
+        
+    end
     async_fifo #(.WIDTH(DATA_WIDTH*ARRAY_SIZE), .DEPTH(FIFO_DEPTH)) u_act_fifo (
         .i_rst_n   (rst_n),
         .i_wr_clk  (clk_tb),
@@ -108,7 +116,7 @@ module systolic_array_system_tb;
         .o_wr_almost_full(act_fifo_full),  // use almost full so we dont have overrun
         .i_rd_clk  (clk_sa),
         .o_rd_data (act_rd_data),
-        .i_rd_en   (data_rd_en),
+        .i_rd_en   (data_rd_en_delayed),
         .o_rd_almost_empty(act_fifo_empty) // use almost ready so we dont underrun
     );
 
@@ -120,7 +128,7 @@ module systolic_array_system_tb;
         .o_wr_almost_full(weight_fifo_full),
         .i_rd_clk  (clk_sa),
         .o_rd_data (weight_rd_data),
-        .i_rd_en   (data_rd_en),
+        .i_rd_en   (data_rd_en_delayed),
         .o_rd_almost_empty(weight_fifo_empty)
     );
 
@@ -132,7 +140,7 @@ module systolic_array_system_tb;
         .o_wr_almost_full(info_fifo_full),
         .i_rd_clk  (clk_sa),
         .o_rd_data (info_rd_data),
-        .i_rd_en   (data_rd_en),
+        .i_rd_en   (data_rd_en_delayed),
         .o_rd_almost_empty(info_fifo_empty)
     );
 
