@@ -291,7 +291,8 @@ module mmu #(
                     end
                 end
                 SEND_WRITE_DATA: begin
-                    if (i_npu_wready) begin
+                    //if (i_npu_wready) begin
+                    if (i_npu_wready && o_npu_wvalid) begin
                         beats_per_burst <= beats_per_burst - 1;
                         beat_toggle <= ~beat_toggle;
                         if (beat_toggle != 1'b1) begin
@@ -452,15 +453,18 @@ module mmu #(
                 next_act_ren   = 1'b1;
                 next_act_raddr = mem_if_addr;
 
-                //Drop valid immediately on handshake
-                next_npu_wvalid = !i_npu_wready;
-                // next_npu_wvalid = 1'b1;
+                //Drop valid immediately on handshake 
+                //next_npu_wvalid = !i_npu_wready;
+                next_npu_wvalid = 1'b1;
                 next_npu_wstrb  = 4'hF; 
 
-                if (beat_toggle == 1'b0) begin
-                    next_npu_wdata = i_act_rdata[31:0];
-                end else begin
+                //if (beat_toggle == 1'b0) begin
+                if ((o_npu_wvalid && i_npu_wready) ? ~beat_toggle : beat_toggle) begin
+                    // next_npu_wdata = i_act_rdata[31:0];
                     next_npu_wdata = i_act_rdata[63:32];
+                end else begin
+                    //next_npu_wdata = i_act_rdata[63:32];
+                    next_npu_wdata = i_act_rdata[31:0];
                 end
 
                 next_npu_wlast = (beats_per_burst == 1);
