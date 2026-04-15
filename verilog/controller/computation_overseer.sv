@@ -304,6 +304,9 @@ module computation_overseer #(
             d_cdc_ack <= '0;
             d1_cdc_ack <= '0;
 
+            kernels_processed <= '0;
+            drain_curr_systolic_array <= '0;
+
         end else begin
             d_pop_almost_empty <= i_pop_almost_empty;
             d_pop_full     <= i_pop_full;

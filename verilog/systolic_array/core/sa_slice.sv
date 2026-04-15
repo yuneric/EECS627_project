@@ -3,8 +3,8 @@ module sa_slice #(
     parameter SHIFT_WIDTH       = 5,
     parameter WT_ADDR_WIDTH     = 11,
     parameter WORD_SIZE         = 64,
-    parameter INPUT_FIFO_DEPTH  = 16,
-    parameter INPUT_FIFO_AF_LVL = 1,
+    parameter INPUT_FIFO_DEPTH  = 32,
+    parameter INPUT_FIFO_AF_LVL = 5,
     parameter OUTPUT_FIFO_DEPTH = 8 
 )(
     input  logic                     i_clk_sys,   // system-side clock (FIFO write / controller domain)

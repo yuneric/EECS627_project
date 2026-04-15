@@ -16,14 +16,16 @@ module systolic_array_system_tb;
 
     // For the tb
     reg clk_tb, clk_sa, rst_n;
-    reg clk_en; 
+//    reg clk_en; 
     
-    initial clk_en = 0;
+//    initial clk_en = 0;
     initial clk_tb = 0;
     initial clk_sa = 0;
     
-    always #(`CLK_PERIOD_SYS_HALF) if (clk_en) clk_tb = ~clk_tb;  
-    always #(`CLK_PERIOD_SA_HALF) if (clk_en) clk_sa = ~clk_sa;
+    // always #(`CLK_PERIOD_SYS_HALF) if (clk_en) clk_tb = ~clk_tb;  
+    // always #(`CLK_PERIOD_SA_HALF) if (clk_en) clk_sa = ~clk_sa;
+    always #(`CLK_PERIOD_SYS_HALF) clk_tb = ~clk_tb;  
+    always #(`CLK_PERIOD_SA_HALF)  clk_sa = ~clk_sa;
 
     logic  [ACT_VEC_W-1:0]    input_act_wr_data;
     logic  [ACT_VEC_W-1:0]    input_weight_wr_data;
@@ -67,7 +69,7 @@ module systolic_array_system_tb;
     //// APR targets
     `ifdef APR
     initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/systolic_array_system/systolic_array_system.apr.sdf", systolic_array_system_tb.dut,,,"TYPICAL");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr/systolic_array_system.apr.sdf", systolic_array_system_tb.dut,,"sa_sys_apr_sdf.log","MINIMUM");
     end
     `else
     initial begin
@@ -76,6 +78,23 @@ module systolic_array_system_tb;
     `endif
     /////// 
 
+    reg [DATA_WIDTH*ARRAY_SIZE-1:0] act_rd_data_dly;
+    reg [DATA_WIDTH*ARRAY_SIZE-1:0] weight_rd_data_dly;
+    reg                             info_rd_data_dly;
+    reg                             data_available_dly;
+    reg                             relu_en_dly;
+    reg [SHIFT_WIDTH-1:0]           shift_by_dly;
+    reg                             maxpool_en_dly;
+
+    always @(negedge clk_sa) begin
+        act_rd_data_dly    <= act_rd_data;
+        weight_rd_data_dly <= weight_rd_data;
+        info_rd_data_dly   <= info_rd_data;
+        data_available_dly <= data_available;
+        relu_en_dly        <= relu_en;
+        shift_by_dly       <= shift_by;
+        maxpool_en_dly     <= maxpool_en;
+    end
 
     systolic_array_system #(
         .ARRAY_SIZE(ARRAY_SIZE),
@@ -84,19 +103,40 @@ module systolic_array_system_tb;
         .OUTPUT_WIDTH(OUTPUT_WIDTH),
         .SHIFT_WIDTH(SHIFT_WIDTH)
     ) dut (
-        .i_clk(clk_sa),
-        .i_rst_n(rst_n),
-        .i_fifo_act_data        (act_rd_data      ),
-        .i_fifo_weight_data     (weight_rd_data   ),
-        .i_fifo_info_data       (info_rd_data     ),
-        .i_fifo_data_available  (data_available),
-        .o_fifo_rd_en           (data_rd_en         ),
-        .i_relu_en                (relu_en            ),
-        .i_shift_by               (shift_by           ),
-        .i_maxpool_en             (maxpool_en         ),
-        .o_final_out              (output_wr_data     ),
-        .o_final_valid            (output_valid        )
+        .i_clk                  (clk_sa),              // DO NOT delay the clock!
+        .i_rst_n                (rst_n),               // DO NOT delay the rst!
+        .i_fifo_act_data        (act_rd_data_dly),
+        .i_fifo_weight_data     (weight_rd_data_dly),
+        .i_fifo_info_data       (info_rd_data_dly),
+        .i_fifo_data_available  (data_available_dly),
+        .o_fifo_rd_en           (data_rd_en),          // Output, no delay needed
+        .i_relu_en              (relu_en_dly),
+        .i_shift_by             (shift_by_dly),
+        .i_maxpool_en           (maxpool_en_dly),
+        .o_final_out            (output_wr_data),      // Output, no delay needed
+        .o_final_valid          (output_valid)         // Output, no delay needed
     );
+
+    // systolic_array_system #(
+    //     .ARRAY_SIZE(ARRAY_SIZE),
+    //     .DATA_WIDTH(DATA_WIDTH),
+    //     .PSUM_WIDTH(PSUM_WIDTH),
+    //     .OUTPUT_WIDTH(OUTPUT_WIDTH),
+    //     .SHIFT_WIDTH(SHIFT_WIDTH)
+    // ) dut (
+    //     .i_clk(clk_sa),
+    //     .i_rst_n(rst_n),
+    //     .i_fifo_act_data        (act_rd_data      ),
+    //     .i_fifo_weight_data     (weight_rd_data   ),
+    //     .i_fifo_info_data       (info_rd_data     ),
+    //     .i_fifo_data_available  (data_available),
+    //     .o_fifo_rd_en           (data_rd_en         ),
+    //     .i_relu_en                (relu_en            ),
+    //     .i_shift_by               (shift_by           ),
+    //     .i_maxpool_en             (maxpool_en         ),
+    //     .o_final_out              (output_wr_data     ),
+    //     .o_final_valid            (output_valid        )
+    // );
 
 
     logic data_rd_en_delayed;
@@ -202,12 +242,17 @@ module systolic_array_system_tb;
         input_weight_wr_data = 0;
         input_data_last      = 0;
         capture_idx          = 0;
+        relu_en         = '0;
+        shift_by        = '0;
+        maxpool_en      = '0;
         
         // --- NEW CLOCK-DELAYED RESET SEQUENCE ---
-        #50;          // Wait 50ns with clocks completely dead
+        // #50;          // Wait 50ns with clocks completely dead
+        #1000;
+        @(negedge clk_tb)
         rst_n = 1;    // De-assert reset
-        #50;          // Wait another 50ns (massively satisfies the 1ns fake limit)
-        clk_en = 1;   // NOW start the clocks!
+        // #50;          // Wait another 50ns (massively satisfies the 1ns fake limit)
+        // clk_en = 1;   // NOW start the clocks!
         
         repeat (2) @(negedge clk_tb); // Wait a couple cycles before starting tests
         // ----------------------------------------

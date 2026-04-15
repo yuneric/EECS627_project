@@ -1,1 +1,4 @@
-word_0: fcfe00fcfcfe00fc
+word_0: ff0001fdfcfe00fc
+word_1: 0202fe030203fe01
+word_2: 0300fffdfe020102
+word_3: 0200000200ffffff

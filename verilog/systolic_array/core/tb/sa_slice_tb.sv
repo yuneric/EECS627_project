@@ -294,6 +294,7 @@ module sa_slice_tb;
     initial begin
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", sa_slice_tb.dut, "", "sa_slice_syn_sdf.log");
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf", sa_slice_tb.dut.u_sa_sys_power_u_sa_sys, "", "sa_sys_syn_sdf.log");
+        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr/systolic_array_system.apr.sdf", sa_slice_tb.dut.u_sa_sys_power_u_sa_sys,,"sa_sys_apr_sdf.log","MAXIMUM");
     end
     `else
     initial begin

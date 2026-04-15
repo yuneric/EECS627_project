@@ -188,7 +188,8 @@ module compute_tb;
                 .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
             ) dut_sa_slice (
                 .i_clk_sys         (clk_sys),
-                .i_clk_sa          (clk_sa),
+                // .i_clk_sa          (clk_sa),
+                .i_clk_sel         (3'b000),
                 .i_rst_n           (rst_n),
 
                 .i_cdc_req         (cdc_req),

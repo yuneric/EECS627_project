@@ -25,13 +25,22 @@ module mmu_tb;
     logic clk   = 0;
     logic rst_n = 0;
     always #3.0 clk = ~clk;
-    logic wmem_clk;// why do these timing violations exists
 
+    // Define our testbench clocks
+    logic tb_clk;
+    logic wmem_clk;
+
+    // Apply the insertion delay ONLY during APR gate-level simulation
     `ifdef APR
-        assign #1 wmem_clk = ~clk;
+        real CT_DELAY = 0.967; // Your exact APR clock tree insertion delay
+        assign #(CT_DELAY) tb_clk = clk; 
     `else
-        assign wmem_clk = ~clk;
+        // For Behavioral (RTL) or Synthesis simulation, keep them perfectly aligned
+        assign tb_clk = clk;
     `endif
+
+    // Drive SRAM off the negedge of the synchronized testbench clock
+    assign wmem_clk = ~tb_clk;
     
     integer act_write_count;
 
@@ -128,14 +137,14 @@ module mmu_tb;
     `ifdef APR
     initial begin
         $display("[%0t] Applying APR SDF", $time);
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/apr/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
         //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/axi/axi_arbiter.apr.sdf", mmu_tb.arbiter_inst, "",, "MAXIMUM");
     end
     `elsif SYN
     initial begin
         $display("[%0t] Applying SDF", $time);
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmu/mmu.syn.sdf", mmu_tb.mmu_dut);
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", mmu_tb.arbiter_inst);
+//        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/axi/axi_arbiter.syn.sdf", mmu_tb.arbiter_inst);
     end
     `else
     initial begin
@@ -359,7 +368,8 @@ module mmu_tb;
         .ADDR_WIDTH(ADDR_WIDTH),
         .DATA_WIDTH(DATA_WIDTH)
     ) arbiter_inst (
-        .clk(clk),
+        //.clk(clk),
+        .clk(tb_clk),
         .rst_n(rst_n),
 
         .i_cpu_valid (1'b0), // noboddy cares about the pc here
@@ -475,7 +485,8 @@ module mmu_tb;
         end
     endtask
 
-    always @(posedge clk) begin
+    //always @(posedge clk) begin
+    always @(posedge tb_clk) begin
         //if we're not resetting and the weight write enable is enabled.
         if (rst_n && o_wgt_wen) begin
             //if the sram_sel is not the expected bank, display an error
@@ -642,7 +653,8 @@ module mmu_tb;
 
     // fake act sram
     //async reset
-    always @(posedge clk or negedge rst_n) begin
+    // always @(posedge clk or negedge rst_n) begin
+    always @(negedge clk or negedge rst_n) begin
     if (!rst_n) begin
         //count keeps actual write count
         act_write_count <= 0;
@@ -755,11 +767,13 @@ module mmu_tb;
             //stride_bytes   = w_cfg * wpc_cfg * 8;
             // nanda: previous spec the above line was correct but now that the goldebrick changed 
             stride_bytes   = w_cfg;
-            repeat (5) @(posedge clk); 
+            // repeat (5) @(posedge clk); 
             rst_n = 1'b0;
-            repeat (5) @(posedge clk);
+            // repeat (5) @(posedge clk);
+            #1000;
+            @(negedge clk);
             rst_n = 1'b1;
-            repeat (2) @(posedge clk);
+            @(posedge clk);
 
             errors        = 0;
             write_count   = 0;
@@ -819,6 +833,8 @@ module mmu_tb;
             repeat (5) @(posedge clk);
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
+
+            @(negedge clk);
             rst_n = 1'b1;
             @(posedge clk);
             #0.1 rst_n = 1'b1;
@@ -897,9 +913,11 @@ module mmu_tb;
             repeat (5) @(posedge clk);
             rst_n = 1'b0;
             repeat (5) @(posedge clk);
+            @(negedge clk);
             //================================================STORE TILE======================================================================
-            rst_n = 1'b1;
+            #0.1 rst_n = 1'b1;
             repeat (2) @(posedge clk);
+            @(negedge clk);
 
             timeout_count = 0;
 
@@ -929,8 +947,9 @@ module mmu_tb;
             store_dump_path = $sformatf("actual_store_beats_test%0d.txt", test_idx);
             store_dump_fd = $fopen(store_dump_path, "w");
 
+            @(negedge clk);
             i_store_tile = 1'b1;
-            @(posedge clk);
+            @(negedge clk);
             i_store_tile = 1'b0;
 
             timeout_count = 0;

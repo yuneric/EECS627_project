@@ -1,4 +1,5 @@
 verilog/axi/axi_arbiter.v
+verilog/axi/axi_mem_pipeline.sv
 verilog/controller/controller.sv
 verilog/controller_integration/tb/controller_integration_tb.sv
 verilog/cpu/picorv32.v
