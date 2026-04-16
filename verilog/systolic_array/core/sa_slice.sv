@@ -44,7 +44,9 @@ module sa_slice #(
 );
 
     // Clock generator for this slice
-    wire clk_sa;
+    wire        clk_sa;
+    wire  [7:0] pmos_val;
+    wire [11:0] adc_out;
 
     clk_gen_mode u_clk_gen (
         .rstn_i     (i_rst_n),
@@ -232,8 +234,13 @@ module sa_slice #(
     // );
 
     sa_sys_power u_sa_sys_power (
+        // DVFS
+        .i_clk_sys             (i_clk_sys), // core-side clock for sensing and pmos ladders (global domain)
+        .i_pmos_val            (pmos_val),
+        .o_adc_out             (adc_out),
+
         // Input side
-        .i_clk                 (clk_sa),
+        .i_clk_sa              (clk_sa),
         .i_rst_n               (i_rst_n),
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
@@ -247,6 +254,8 @@ module sa_slice #(
         // Output Side
         .o_final_out           (final_out),
         .o_final_valid         (final_valid)
+
+
     );
 
     logic [WORD_SIZE-1:0]     pop_data;

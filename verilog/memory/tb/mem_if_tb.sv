@@ -85,6 +85,26 @@ module mem_if_tb ();
         .i_s1_wdata(b1_s1_wdata)
     );
 
+    `ifdef APR
+    initial begin
+        $display("[%0t] Applying APR SDF to mem_if_tb.bank0", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mem_bank/apr/mem_bank.apr.sdf", mem_if_tb.bank0,,,"MAXIMUM");
+        $display("[%0t] Applying APR SDF to mem_if_tb.bank1", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mem_bank/apr/mem_bank.apr.sdf", mem_if_tb.bank1,,,"MAXIMUM");
+    end
+    `elsif SYN
+    initial begin
+        $display("[%0t] Applying SYN SDF to mem_if_tb.bank0", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mem_bank/mem_bank.syn.sdf", mem_if_tb.bank0);
+        $display("[%0t] Applying SYN SDF to mem_if_tb.bank1", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mem_bank/mem_bank.syn.sdf", mem_if_tb.bank1);
+    end
+    `else
+    initial begin
+        $display("[%0t] no SDF annotation", $time);
+    end
+    `endif
+
     mem_if #(
         .ADDR_WIDTH(ADDR_WIDTH),
         .DATA_WIDTH(DATA_WIDTH)

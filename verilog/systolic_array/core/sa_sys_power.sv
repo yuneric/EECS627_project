@@ -1,8 +1,9 @@
 module sa_sys_power #(
     parameter WORD_SIZE         = 64,
-    parameter SHIFT_WIDTH       = 5
+    parameter SHIFT_WIDTH       = 5,
+    parameter PMOS_LADDER_COUNT = 11
 )(
-    input  wire                                 i_clk,   // compute-side clock (systolic array domain)
+    input  wire                                 i_clk_sa,   // compute-side clock (systolic array domain)
     input  wire                                 i_rst_n,
 
     input  wire  [WORD_SIZE-1:0]                i_fifo_act_data      ,
@@ -16,7 +17,13 @@ module sa_sys_power #(
     input  wire                                 i_maxpool_en,
 
     output reg [WORD_SIZE-1:0]                  o_final_out,
-    output reg                                  o_final_valid
+    output reg                                  o_final_valid,
+
+
+    // DVFS
+    input wire                                  i_clk_sys, // core-side clock for sensing and pmos ladders (global domain)
+    input wire  [7:0]                           i_pmos_val,
+    output wire [11:0]                          o_adc_out
 );   
 
     wire fifo_pop_en_lv;
@@ -30,7 +37,7 @@ module sa_sys_power #(
 
     // Want to try and avoid glitches during power up
     // reset should remain asserted until power is good
-    always_ff @(posedge i_clk or negedge i_rst_n) begin
+    always_ff @(posedge i_clk_sa or negedge i_rst_n) begin
         if(!i_rst_n) begin
             o_fifo_rd_en    <= 0;
             o_final_out     <= 0;
@@ -44,7 +51,7 @@ module sa_sys_power #(
     
     systolic_array_system u_sa_sys (
         // Input side
-        .i_clk                 (i_clk),
+        .i_clk                 (i_clk_sa),
         .i_rst_n               (i_rst_n),
         .i_fifo_act_data       (i_fifo_act_data),
         .i_fifo_weight_data    (i_fifo_weight_data),
@@ -80,6 +87,44 @@ module sa_sys_power #(
         end
     endgenerate
 
+    // Oh our lords synposys and cadance please give mercy and don't touch this
+    // pmos_ladder_8b u_custom_ladder [PMOS_LADDER_COUNT-1:0] (
+    //     .CLK(clk),
+    //     .\thermo[0] (i_pmos_val[0]),
+    //     .\thermo[1] (i_pmos_val[1]),
+    //     .\thermo[2] (i_pmos_val[2]),
+    //     .\thermo[3] (i_pmos_val[3]),
+    //     .\thermo[4] (i_pmos_val[4]),
+    //     .\thermo[5] (i_pmos_val[5]),
+    //     .\thermo[6] (i_pmos_val[6]),
+    //     .\thermo[7] (i_pmos_val[7])
+    // );
 
+    // flash_adc_12 u_adc (
+    //     .CLK(i_clk_sys),
+    //     .\A[0]  (o_adc_out[0]),
+    //     .\A[1]  (o_adc_out[1]),
+    //     .\A[2]  (o_adc_out[2]),
+    //     .\A[3]  (o_adc_out[3]),
+    //     .\A[4]  (o_adc_out[4]),
+    //     .\A[5]  (o_adc_out[5]),
+    //     .\A[6]  (o_adc_out[6]),
+    //     .\A[7]  (o_adc_out[7]),
+    //     .\A[8]  (o_adc_out[8]),
+    //     .\A[9]  (o_adc_out[9]),
+    //     .\A[10] (o_adc_out[10]),
+    //     .\A[11] (o_adc_out[11])
+    // );
+
+    pmos_ladder_8b u_custom_ladder [PMOS_LADDER_COUNT-1:0] (
+        .CLK(i_clk_sys),
+        .thermo(i_pmos_val)
+    );
+
+    flash_adc_12 u_adc (
+        .CLK(i_clk_sys),
+        .A(o_adc_out),
+        .B()
+    );
 
 endmodule

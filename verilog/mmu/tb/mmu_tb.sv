@@ -137,7 +137,8 @@ module mmu_tb;
     `ifdef APR
     initial begin
         $display("[%0t] Applying APR SDF", $time);
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/apr/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/apr_mmmc/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
+        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/mmu/apr/mmu.apr.sdf", mmu_tb.mmu_dut, "",, "MAXIMUM");
         //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/axi/axi_arbiter.apr.sdf", mmu_tb.arbiter_inst, "",, "MAXIMUM");
     end
     `elsif SYN

@@ -1,7 +1,7 @@
 `define LS_DELAY                   #3
 `define SD                         #1
-`define CLK_PERIOD                 5
-`define CLK_PERIOD_HALF            2.5
+`define CLK_PERIOD                 6.0
+`define CLK_PERIOD_HALF            (`CLK_PERIOD/2.0)
 `define CLK_PERIOD_SYS             6.0
 `define CLK_PERIOD_SYS_HALF        (`CLK_PERIOD_SYS/2.0)
 `define CLK_PERIOD_SA              6.0

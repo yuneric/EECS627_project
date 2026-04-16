@@ -74,7 +74,8 @@ module computation_overseer_tb;
     assign pop_data_real = (array_active[0] & !(|array_active[7:1])) ? dly_pop_data : pop_data; 
     always_ff @(posedge clk) begin
         for (int i = 0; i < DIM; i++) begin       
-            dly_pop_data        <= pop_data;
+            // A lil something for the apr folks in the crowd
+            dly_pop_data <= #(`CLK_PERIOD_SYS_HALF)  pop_data;
             // dly_almost_empty[i] <= almost_empty[i];
             // dly_pop_full[i]     <= pop_full[i];  
         end
@@ -248,6 +249,10 @@ module computation_overseer_tb;
         $fsdbDumpvars(0, computation_overseer_tb, "+all");
         `ifdef SYN
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/computation_overseer/computation_overseer.syn.sdf", computation_overseer_tb.dut);
+        `endif
+        `ifdef APR
+        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/computation_overseer/apr/computation_overseer.apr.sdf", computation_overseer_tb.dut,,"comp_over_apr_sdf.log","MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/computation_overseer/apr_mmmc/computation_overseer.apr.sdf", computation_overseer_tb.dut,,"comp_over_apr_sdf.log","MAXIMUM");
         `endif
     end
 
