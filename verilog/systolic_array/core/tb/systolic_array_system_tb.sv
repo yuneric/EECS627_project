@@ -69,7 +69,7 @@ module systolic_array_system_tb;
     //// APR targets
     `ifdef APR
     initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr/systolic_array_system.apr.sdf", systolic_array_system_tb.dut,,"sa_sys_apr_sdf.log","MINIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr_mmmc/systolic_array_system.apr.sdf", systolic_array_system_tb.dut,,"sa_sys_apr_sdf.log","MAXIMUM");
     end
     `else
     initial begin

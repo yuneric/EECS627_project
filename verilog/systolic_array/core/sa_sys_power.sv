@@ -121,10 +121,10 @@ module sa_sys_power #(
         .thermo(i_pmos_val)
     );
 
-    flash_adc_12 u_adc (
-        .CLK(i_clk_sys),
-        .A(o_adc_out),
-        .B()
-    );
+    `ifdef BEHAV_ADC
+        assign o_adc_out = 12'hFFF;   // pretend Vcore is always at max
+    `else
+        flash_adc_12 u_adc (.CLK(i_clk_sys), .A(o_adc_out), .B());
+    `endif
 
 endmodule

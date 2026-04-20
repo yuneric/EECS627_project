@@ -268,6 +268,10 @@ munchkin #(
                 .o_pop_full        (pop_full[array_i])
 
             );    
+            initial begin
+                $display("[%0t] SYN not defined, annotating clock gen only", $time);
+                $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", dut_sa_slice.u_clk_gen);
+            end
         end
     endgenerate
 

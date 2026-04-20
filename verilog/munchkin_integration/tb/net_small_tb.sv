@@ -17,17 +17,18 @@ module net_small_tb;
 
     parameter PSUM_WIDTH        = 32;
     parameter SHIFT_WIDTH       = 5;
-    parameter INPUT_FIFO_DEPTH  = 16; 
+    parameter INPUT_FIFO_DEPTH  = 32; 
     parameter INPUT_FIFO_AF_LVL = 5; // needs 4 pushes of headsup
     parameter OUTPUT_FIFO_DEPTH = 8; 
 
     //Clock & Reset
-    logic clk_sys, clk_sa;
+    // logic clk_sys, clk_sa;
+    logic clk_sys;
     initial clk_sys = 0;
     always #`CLK_PERIOD_SYS_HALF clk_sys = ~clk_sys;
 
-    initial clk_sa = 0;
-    always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
+    // initial clk_sa = 0;
+    // always #`CLK_PERIOD_SA_HALF clk_sa = ~clk_sa;
 
     logic rstn_sync;
     logic rstn_async;
@@ -54,8 +55,9 @@ module net_small_tb;
     logic [CPU_DATA_WIDTH-1:0] mem_rdata;
 
     // =========================================================================
-    // SA Slice Control Signals (Top 4 Arrays)
+    // Internal Signals: SA Slice Control (Top 4 Arrays)
     // =========================================================================
+    logic [2:0]                     top_clk_sel;
     logic                           top_cdc_req;
     logic [(NUM_ARRAYS/2)-1:0]      top_cdc_ack_arrays;
     logic                           top_relu_en;
@@ -80,8 +82,9 @@ module net_small_tb;
     logic [(NUM_ARRAYS/2)-1:0]      top_pop_full;
 
     // =========================================================================
-    // SA Slice Control Signals (Bottom 4 Arrays)
+    // Internal Signals: SA Slice Control (Bottom 4 Arrays)
     // =========================================================================
+    logic [2:0]                     bottom_clk_sel;
     logic                           bottom_cdc_req;
     logic [(NUM_ARRAYS/2)-1:0]      bottom_cdc_ack_arrays;
     logic                           bottom_relu_en;
@@ -201,9 +204,8 @@ dunkin_donuts #(
     .o_b1_s1_addr (b1_s1_addr  ),
     .o_b1_s1_wdata(b1_s1_wdata ),
 
-    // ==========================================
     // Systolic array ports (Top)
-    // ==========================================
+    .o_top_clk_sel              (top_clk_sel),
     .o_top_cdc_req              (top_cdc_req),
     .i_top_cdc_ack              (top_cdc_ack_arrays),
     .o_top_relu_en              (top_relu_en),
@@ -220,15 +222,14 @@ dunkin_donuts #(
     .o_top_wt_mem_wr_addr       (top_wt_wr_addr), 
     .o_top_wt_mem_wr_data       (top_wt_wr_data), 
     .o_top_wt_mem_wr_en         (top_wt_wr_en),
-   
+    
     .i_top_pop_data             (top_pop_data_mux),
     .o_top_pop_en               (top_pop_en),
     .i_top_pop_ae               (top_pop_ae),
     .i_top_pop_full             (top_pop_full),
 
-    // ==========================================
     // Systolic array ports (Bottom)
-    // ==========================================
+    .o_bottom_clk_sel           (bottom_clk_sel),
     .o_bottom_cdc_req           (bottom_cdc_req),
     .i_bottom_cdc_ack           (bottom_cdc_ack_arrays),
     .o_bottom_relu_en           (bottom_relu_en),
@@ -253,14 +254,45 @@ dunkin_donuts #(
 
 );    
 
-
     // =========================================================================
-    // Top Half Systolic Arrays
+    // Module: Top Half Systolic Arrays (Daisy Chained)
     // =========================================================================
     genvar top_i;
     generate
-        for (top_i = 0; top_i < NUM_ARRAYS/2; top_i = top_i + 1) begin : TOP_SYSTOLIC_ARRAYS
-            sa_slice #(
+        // Step by 2: Index 'top_i' is Inner, 'top_i + 1' is Outer
+        for (top_i = 0; top_i < NUM_ARRAYS/2; top_i = top_i + 2) begin : TOP_SYSTOLIC_ARRAYS
+            localparam INNER = top_i;
+            localparam OUTER = top_i + 1;
+
+            // Intermediate wires between Inner (sa_slice_thru) and Outer (sa_slice)
+            logic                     thru_rst_n;
+            logic [2:0]               thru_clk_sel;
+            logic                     thru_cdc_req;
+            logic                     thru_cdc_ack;
+            logic                     thru_relu_en;
+            logic [SHIFT_WIDTH-1:0]   thru_shift_by;
+            logic                     thru_maxpool_en;
+
+            logic [NPU_DATA_WIDTH-1:0] thru_push_act_data;
+            logic                     thru_push_data_last;
+            logic                     thru_push_en;
+            logic                     thru_push_af;
+
+            logic [NPU_WT_ADDR_WIDTH-1:0] thru_wt_rd_addr;
+            logic                     thru_wt_rd_en;
+
+            logic [NPU_WT_ADDR_WIDTH-1:0] thru_wt_wr_addr;
+            logic                     thru_wt_wr_en;
+            logic [NPU_DATA_WIDTH-1:0] thru_wt_wr_data;
+
+            logic [NPU_DATA_WIDTH-1:0] thru_pop_data;
+            logic                     thru_pop_en;
+            logic                     thru_pop_empty;
+            logic                     thru_pop_ae;
+            logic                     thru_pop_full;
+
+            // INNER SLICE
+            sa_slice_thru #(
                 .PSUM_WIDTH         (PSUM_WIDTH),
                 .SHIFT_WIDTH        (SHIFT_WIDTH),
                 .WT_ADDR_WIDTH      (NPU_WT_ADDR_WIDTH),
@@ -268,43 +300,74 @@ dunkin_donuts #(
                 .INPUT_FIFO_DEPTH   (INPUT_FIFO_DEPTH),
                 .INPUT_FIFO_AF_LVL  (INPUT_FIFO_AF_LVL),
                 .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
-            ) dut_sa_slice (
+            ) slice_inner (
                 .i_clk_sys         (clk_sys),
-                .i_clk_sa          (clk_sa),
+                .i_clk_sel         (top_clk_sel),
                 .i_rst_n           (rstn_async),
 
                 .i_cdc_req         (top_cdc_req),
-                .o_cdc_ack         (top_cdc_ack_arrays[top_i]),
+                .o_cdc_ack         (top_cdc_ack_arrays[INNER]),
                 .i_relu_en         (top_relu_en),
                 .i_shift_by        (top_shift_by),
                 .i_maxpool_en      (top_maxpool_en),
 
                 .i_push_act_data   (top_push_act_data),
                 .i_push_data_last  (top_push_data_last),
-                .i_push_en         (top_push_en[top_i]),
-                .o_push_af         (top_push_af[top_i]),
+                .i_push_en         (top_push_en[INNER]),
+                .o_push_af         (top_push_af[INNER]),
+                
                 .i_wt_sram_rd_addr (top_wt_rd_addr),
-                .i_wt_sram_rd_en   (top_wt_rd_en[top_i]),
+                .i_wt_sram_rd_en   (top_wt_rd_en[INNER]),
 
                 .i_wt_sram_wr_addr (top_wt_wr_addr),
-                .i_wt_sram_wr_en   (top_wt_wr_en[top_i]),
+                .i_wt_sram_wr_en   (top_wt_wr_en[INNER]),
                 .i_wt_sram_wr_data (top_wt_wr_data),
 
-                .o_pop_data        (top_pop_data_arr[top_i]),
-                .i_pop_en          (top_pop_en[top_i]),
+                .o_pop_data        (top_pop_data_arr[INNER]),
+                .i_pop_en          (top_pop_en[INNER]),
                 .o_pop_empty       (),
-                .o_pop_ae          (top_pop_ae[top_i]),
-                .o_pop_full        (top_pop_full[top_i])
-            );    
-        end
-    endgenerate
+                .o_pop_ae          (top_pop_ae[INNER]),
+                .o_pop_full        (top_pop_full[INNER]),
 
-    // =========================================================================
-    // Bottom Half Systolic Arrays
-    // =========================================================================
-    genvar bot_i;
-    generate
-        for (bot_i = 0; bot_i < NUM_ARRAYS/2; bot_i = bot_i + 1) begin : BOTTOM_SYSTOLIC_ARRAYS
+                // THRU ports: Route core's "OUTER" signals to/from the outer slice
+                .o_thru_rst_n           (thru_rst_n),
+                .o_thru_clk_sel         (thru_clk_sel),
+                .o_thru_cdc_req         (thru_cdc_req),
+                .i_thru_cdc_ack         (thru_cdc_ack),
+                .o_thru_cdc_ack         (top_cdc_ack_arrays[OUTER]),
+                .o_thru_relu_en         (thru_relu_en),
+                .o_thru_shift_by        (thru_shift_by),
+                .o_thru_maxpool_en      (thru_maxpool_en),
+
+                .o_thru_push_act_data   (thru_push_act_data),
+                .o_thru_push_data_last  (thru_push_data_last),
+                .i_thru_push_en         (top_push_en[OUTER]),
+                .o_thru_push_en         (thru_push_en),
+                .i_thru_push_af         (thru_push_af),
+                .o_thru_push_af         (top_push_af[OUTER]),
+
+                .o_thru_wt_sram_rd_addr (thru_wt_rd_addr),
+                .i_thru_wt_sram_rd_en   (top_wt_rd_en[OUTER]),
+                .o_thru_wt_sram_rd_en   (thru_wt_rd_en),
+
+                .o_thru_wt_sram_wr_addr (thru_wt_wr_addr),
+                .i_thru_wt_sram_wr_en   (top_wt_wr_en[OUTER]),
+                .o_thru_wt_sram_wr_en   (thru_wt_wr_en),
+                .o_thru_wt_sram_wr_data (thru_wt_wr_data),
+
+                .i_thru_pop_data        (thru_pop_data),
+                .o_thru_pop_data        (top_pop_data_arr[OUTER]),
+                .i_thru_pop_en          (top_pop_en[OUTER]),
+                .o_thru_pop_en          (thru_pop_en),
+                .i_thru_pop_empty       (thru_pop_empty),
+                .o_thru_pop_empty       (), // Not used by core
+                .i_thru_pop_ae          (thru_pop_ae),
+                .o_thru_pop_ae          (top_pop_ae[OUTER]),
+                .i_thru_pop_full        (thru_pop_full),
+                .o_thru_pop_full        (top_pop_full[OUTER])
+            );    
+
+            // OUTER SLICE
             sa_slice #(
                 .PSUM_WIDTH         (PSUM_WIDTH),
                 .SHIFT_WIDTH        (SHIFT_WIDTH),
@@ -313,34 +376,200 @@ dunkin_donuts #(
                 .INPUT_FIFO_DEPTH   (INPUT_FIFO_DEPTH),
                 .INPUT_FIFO_AF_LVL  (INPUT_FIFO_AF_LVL),
                 .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
-            ) dut_sa_slice (
+            ) slice_outer (
                 .i_clk_sys         (clk_sys),
-                .i_clk_sa          (clk_sa),
+                .i_clk_sel         (thru_clk_sel),
+                .i_rst_n           (thru_rst_n),
+
+                .i_cdc_req         (thru_cdc_req),
+                .o_cdc_ack         (thru_cdc_ack),
+                .i_relu_en         (thru_relu_en),
+                .i_shift_by        (thru_shift_by),
+                .i_maxpool_en      (thru_maxpool_en),
+
+                .i_push_act_data   (thru_push_act_data),
+                .i_push_data_last  (thru_push_data_last),
+                .i_push_en         (thru_push_en),
+                .o_push_af         (thru_push_af),
+                
+                .i_wt_sram_rd_addr (thru_wt_rd_addr),
+                .i_wt_sram_rd_en   (thru_wt_rd_en),
+
+                .i_wt_sram_wr_addr (thru_wt_wr_addr),
+                .i_wt_sram_wr_en   (thru_wt_wr_en),
+                .i_wt_sram_wr_data (thru_wt_wr_data),
+
+                .o_pop_data        (thru_pop_data),
+                .i_pop_en          (thru_pop_en),
+                .o_pop_empty       (thru_pop_empty),
+                .o_pop_ae          (thru_pop_ae),
+                .o_pop_full        (thru_pop_full)
+            );
+            initial begin
+                $display("[%0t] SYN not defined, annotating clock gen only", $time);
+                $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", slice_inner.u_clk_gen);
+                $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", slice_outer.u_clk_gen);
+            end
+        end
+    endgenerate
+
+    // =========================================================================
+    // Module: Bottom Half Systolic Arrays (Daisy Chained)
+    // =========================================================================
+    genvar bot_i;
+    generate
+        // Step by 2: Index 'bot_i' is Inner, 'bot_i + 1' is Outer
+        for (bot_i = 0; bot_i < NUM_ARRAYS/2; bot_i = bot_i + 2) begin : BOTTOM_SYSTOLIC_ARRAYS
+            localparam INNER = bot_i;
+            localparam OUTER = bot_i + 1;
+
+            // Intermediate wires between Inner (sa_slice_thru) and Outer (sa_slice)
+            logic                     thru_rst_n;
+            logic [2:0]               thru_clk_sel;
+            logic                     thru_cdc_req;
+            logic                     thru_cdc_ack;
+            logic                     thru_relu_en;
+            logic [SHIFT_WIDTH-1:0]   thru_shift_by;
+            logic                     thru_maxpool_en;
+
+            logic [NPU_DATA_WIDTH-1:0] thru_push_act_data;
+            logic                     thru_push_data_last;
+            logic                     thru_push_en;
+            logic                     thru_push_af;
+
+            logic [NPU_WT_ADDR_WIDTH-1:0] thru_wt_rd_addr;
+            logic                     thru_wt_rd_en;
+
+            logic [NPU_WT_ADDR_WIDTH-1:0] thru_wt_wr_addr;
+            logic                     thru_wt_wr_en;
+            logic [NPU_DATA_WIDTH-1:0] thru_wt_wr_data;
+
+            logic [NPU_DATA_WIDTH-1:0] thru_pop_data;
+            logic                     thru_pop_en;
+            logic                     thru_pop_empty;
+            logic                     thru_pop_ae;
+            logic                     thru_pop_full;
+
+            // INNER SLICE
+            sa_slice_thru #(
+                .PSUM_WIDTH         (PSUM_WIDTH),
+                .SHIFT_WIDTH        (SHIFT_WIDTH),
+                .WT_ADDR_WIDTH      (NPU_WT_ADDR_WIDTH),
+                .WORD_SIZE          (NPU_DATA_WIDTH),
+                .INPUT_FIFO_DEPTH   (INPUT_FIFO_DEPTH),
+                .INPUT_FIFO_AF_LVL  (INPUT_FIFO_AF_LVL),
+                .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
+            ) slice_inner (
+                .i_clk_sys         (clk_sys),
+                .i_clk_sel         (bottom_clk_sel),
                 .i_rst_n           (rstn_async),
 
                 .i_cdc_req         (bottom_cdc_req),
-                .o_cdc_ack         (bottom_cdc_ack_arrays[bot_i]),
+                .o_cdc_ack         (bottom_cdc_ack_arrays[INNER]),
                 .i_relu_en         (bottom_relu_en),
                 .i_shift_by        (bottom_shift_by),
                 .i_maxpool_en      (bottom_maxpool_en),
 
                 .i_push_act_data   (bottom_push_act_data),
                 .i_push_data_last  (bottom_push_data_last),
-                .i_push_en         (bottom_push_en[bot_i]),
-                .o_push_af         (bottom_push_af[bot_i]),
+                .i_push_en         (bottom_push_en[INNER]),
+                .o_push_af         (bottom_push_af[INNER]),
+                
                 .i_wt_sram_rd_addr (bottom_wt_rd_addr),
-                .i_wt_sram_rd_en   (bottom_wt_rd_en[bot_i]),
+                .i_wt_sram_rd_en   (bottom_wt_rd_en[INNER]),
 
                 .i_wt_sram_wr_addr (bottom_wt_wr_addr),
-                .i_wt_sram_wr_en   (bottom_wt_wr_en[bot_i]),
+                .i_wt_sram_wr_en   (bottom_wt_wr_en[INNER]),
                 .i_wt_sram_wr_data (bottom_wt_wr_data),
 
-                .o_pop_data        (bottom_pop_data_arr[bot_i]),
-                .i_pop_en          (bottom_pop_en[bot_i]),
+                .o_pop_data        (bottom_pop_data_arr[INNER]),
+                .i_pop_en          (bottom_pop_en[INNER]),
                 .o_pop_empty       (),
-                .o_pop_ae          (bottom_pop_ae[bot_i]),
-                .o_pop_full        (bottom_pop_full[bot_i])
+                .o_pop_ae          (bottom_pop_ae[INNER]),
+                .o_pop_full        (bottom_pop_full[INNER]),
+
+                // THRU ports: Route core's "OUTER" signals to/from the outer slice
+                .o_thru_rst_n           (thru_rst_n),
+                .o_thru_clk_sel         (thru_clk_sel),
+                .o_thru_cdc_req         (thru_cdc_req),
+                .i_thru_cdc_ack         (thru_cdc_ack),
+                .o_thru_cdc_ack         (bottom_cdc_ack_arrays[OUTER]),
+                .o_thru_relu_en         (thru_relu_en),
+                .o_thru_shift_by        (thru_shift_by),
+                .o_thru_maxpool_en      (thru_maxpool_en),
+
+                .o_thru_push_act_data   (thru_push_act_data),
+                .o_thru_push_data_last  (thru_push_data_last),
+                .i_thru_push_en         (bottom_push_en[OUTER]),
+                .o_thru_push_en         (thru_push_en),
+                .i_thru_push_af         (thru_push_af),
+                .o_thru_push_af         (bottom_push_af[OUTER]),
+
+                .o_thru_wt_sram_rd_addr (thru_wt_rd_addr),
+                .i_thru_wt_sram_rd_en   (bottom_wt_rd_en[OUTER]),
+                .o_thru_wt_sram_rd_en   (thru_wt_rd_en),
+
+                .o_thru_wt_sram_wr_addr (thru_wt_wr_addr),
+                .i_thru_wt_sram_wr_en   (bottom_wt_wr_en[OUTER]),
+                .o_thru_wt_sram_wr_en   (thru_wt_wr_en),
+                .o_thru_wt_sram_wr_data (thru_wt_wr_data),
+
+                .i_thru_pop_data        (thru_pop_data),
+                .o_thru_pop_data        (bottom_pop_data_arr[OUTER]),
+                .i_thru_pop_en          (bottom_pop_en[OUTER]),
+                .o_thru_pop_en          (thru_pop_en),
+                .i_thru_pop_empty       (thru_pop_empty),
+                .o_thru_pop_empty       (), // Not used by core
+                .i_thru_pop_ae          (thru_pop_ae),
+                .o_thru_pop_ae          (bottom_pop_ae[OUTER]),
+                .i_thru_pop_full        (thru_pop_full),
+                .o_thru_pop_full        (bottom_pop_full[OUTER])
             );    
+
+            // OUTER SLICE
+            sa_slice #(
+                .PSUM_WIDTH         (PSUM_WIDTH),
+                .SHIFT_WIDTH        (SHIFT_WIDTH),
+                .WT_ADDR_WIDTH      (NPU_WT_ADDR_WIDTH),
+                .WORD_SIZE          (NPU_DATA_WIDTH),
+                .INPUT_FIFO_DEPTH   (INPUT_FIFO_DEPTH),
+                .INPUT_FIFO_AF_LVL  (INPUT_FIFO_AF_LVL),
+                .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
+            ) slice_outer (
+                .i_clk_sys         (clk_sys),
+                .i_clk_sel         (thru_clk_sel),
+                .i_rst_n           (thru_rst_n),
+
+                .i_cdc_req         (thru_cdc_req),
+                .o_cdc_ack         (thru_cdc_ack),
+                .i_relu_en         (thru_relu_en),
+                .i_shift_by        (thru_shift_by),
+                .i_maxpool_en      (thru_maxpool_en),
+
+                .i_push_act_data   (thru_push_act_data),
+                .i_push_data_last  (thru_push_data_last),
+                .i_push_en         (thru_push_en),
+                .o_push_af         (thru_push_af),
+                
+                .i_wt_sram_rd_addr (thru_wt_rd_addr),
+                .i_wt_sram_rd_en   (thru_wt_rd_en),
+
+                .i_wt_sram_wr_addr (thru_wt_wr_addr),
+                .i_wt_sram_wr_en   (thru_wt_wr_en),
+                .i_wt_sram_wr_data (thru_wt_wr_data),
+
+                .o_pop_data        (thru_pop_data),
+                .i_pop_en          (thru_pop_en),
+                .o_pop_empty       (thru_pop_empty),
+                .o_pop_ae          (thru_pop_ae),
+                .o_pop_full        (thru_pop_full)
+            );
+
+            initial begin
+                $display("[%0t] SYN not defined, annotating clock gen only", $time);
+                $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", slice_inner.u_clk_gen);
+                $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", slice_outer.u_clk_gen);
+            end
         end
     endgenerate
 

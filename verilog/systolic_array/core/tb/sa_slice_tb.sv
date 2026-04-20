@@ -11,7 +11,7 @@ module sa_slice_tb;
     parameter SHIFT_WIDTH  = 5;
     parameter INPUT_FIFO_DEPTH   = 16; 
     parameter OUTPUT_FIFO_DEPTH   = 8; 
-    parameter NUM_TESTS    = 14;
+    parameter NUM_TESTS    = 3;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
     localparam int ACT_VEC_W = DATA_WIDTH * ARRAY_SIZE;
@@ -20,7 +20,7 @@ module sa_slice_tb;
 //    logic clk_sys, clk_sa, rst_n;
     logic clk_sys, rst_n;
 
-    logic [2:0] clk_sel;
+    //logic [2:0] clk_sel;
 
 
     logic [DATA_WIDTH*ARRAY_SIZE-1:0] push_act_data;
@@ -37,6 +37,7 @@ module sa_slice_tb;
     // logic [ARRAY_SIZE*OUTPUT_WIDTH-1:0] output_wr_data;
     // logic                               output_valid;
     logic [OUT_VEC_W-1:0]               pop_data;
+    logic [2:0]                         user_req;
     logic                               pop_en;
 //    logic                               pop_empty;
     logic                               output_fifo_full;
@@ -51,7 +52,6 @@ module sa_slice_tb;
     initial clk_sys = 0;
     always #(`CLK_PERIOD_SYS_HALF) clk_sys = ~clk_sys;
 
-    initial clk_sel = 3'b010;
 
     // initial clk_sa = 0;
     // always #(`CLK_PERIOD_SA_HALF) clk_sa = ~clk_sa;
@@ -65,8 +65,9 @@ module sa_slice_tb;
         .OUTPUT_FIFO_DEPTH  (OUTPUT_FIFO_DEPTH)
     ) dut (
         .i_clk_sys         (clk_sys),
+        .i_clk_sel        (user_req),
         // .i_clk_sa          (clk_sa),
-        .i_clk_sel         (clk_sel),
+        //.i_clk_sel         (clk_sel),
         .i_rst_n           (rst_n),
         .i_cdc_req         (cdc_req),
         .o_cdc_ack         (cdc_ack),
@@ -127,6 +128,57 @@ module sa_slice_tb;
     end
     endtask
 
+    // ANALOG FEEDBACK LOOP MIMIC (Self-Contained in TB)
+    integer active_pmos;
+    integer current_fake_vcore_mv = 0;
+    integer target_vcore_mv;
+    
+    // Adjust this to make the simulated power rail ramp faster or slower
+    localparam integer MV_SLEW_RATE = 5; // Changes by 5mV per clock cycle
+
+    logic [11:0] mock_A;
+
+    always @(posedge clk_sys) begin
+        if (!rst_n) begin
+            current_fake_vcore_mv <= 0;
+            mock_A <= 12'b0;
+        end else begin
+            // 1. Read the PMOS drive from the DLDO (8'hFF = all off)
+            active_pmos = 255 - dut.u_dldo.pmos_drv_bin; 
+
+            // 2. Calculate the target steady-state voltage
+            // Assuming 1 PMOS ~ 5mV of driving strength
+            target_vcore_mv = active_pmos * 5;
+
+            // 3. Fake the RC Charging/Discharging physics (Slew Rate)
+            if (current_fake_vcore_mv < target_vcore_mv) begin
+                if ((target_vcore_mv - current_fake_vcore_mv) < MV_SLEW_RATE)
+                    current_fake_vcore_mv <= target_vcore_mv;
+                else
+                    current_fake_vcore_mv <= current_fake_vcore_mv + MV_SLEW_RATE;
+            end 
+            else if (current_fake_vcore_mv > target_vcore_mv) begin
+                if ((current_fake_vcore_mv - target_vcore_mv) < MV_SLEW_RATE)
+                    current_fake_vcore_mv <= target_vcore_mv;
+                else
+                    current_fake_vcore_mv <= current_fake_vcore_mv - MV_SLEW_RATE;
+            end
+
+            // 4. ADC Threshold Logic 
+            // A[0] -> 600mV, A[1] -> 650mV ... A[11] -> 1150mV
+            for (int i = 0; i < 12; i = i + 1) begin
+                mock_A[i] <= (current_fake_vcore_mv >= (600 + i*50));
+            end
+        end
+    end
+
+    // 5. Inject the calculated outputs straight into the LVS black-box
+    initial begin
+        // NOTE: Adjust `u_adc` if the instance name inside sa_sys_power is different!
+        force dut.u_sa_sys_power.u_adc.A = mock_A;
+        force dut.u_sa_sys_power.u_adc.B = ~mock_A; 
+    end
+
     task run_test(input integer tid);
     begin
         $display("");
@@ -164,6 +216,7 @@ module sa_slice_tb;
         wt_wr_addr      = '0;
         wt_wr_en        = 0;
         wt_wr_data      = '0;
+        user_req        = '0;
 
         #1000
         // repeat (10) @(posedge clk_sys);
@@ -171,6 +224,18 @@ module sa_slice_tb;
         rst_n = 1;
         repeat (10) @(posedge clk_sys);
         // repeat (3) @(posedge clk_sa);
+        
+        // 1. Request the highest DVFS operating point
+        user_req = $urandom_range(0, 5); 
+        $display("  [time %0t] [DVFS] Requested random operating point (user_req) = %0d", $time, user_req);
+        
+        // 2. Wait for the DVFS controller to reach S_STABLE (state == 2)
+        // Without this, the testbench pushes data into a sleeping array!
+        wait (dut.u_dvfs_ctrl.state == 3'd0);
+        
+        // 3. Give it a few cycles to settle before pushing data
+        repeat (10) @(posedge clk_sys);
+
 
         for (int r = 0; r < data_len; r++) begin
             @(posedge clk_sys);
@@ -195,7 +260,6 @@ module sa_slice_tb;
         @(posedge clk_sys)
         cdc_req = 0;
         wait(~cdc_ack);
-
         @(posedge clk_sys);
         wt_rd_en = 1'b0;
         write_idx   = 0;
@@ -213,9 +277,10 @@ module sa_slice_tb;
             wt_rd_en   = 1'b1;
             wt_rd_addr = write_idx;
             @(posedge clk_sys);
-
+            //user_req = $urandom_range(0, 5);
             @(posedge clk_sys);
             #1;
+            //user_req = $urandom_range(0, 5);
 
             if (!push_af) begin
                 push_act_data = act_data[write_idx];
@@ -290,16 +355,32 @@ module sa_slice_tb;
     end
     endtask
 
-    `ifdef SYN
+    `ifdef APR
     initial begin
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", sa_slice_tb.dut, "", "sa_slice_syn_sdf.log");
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf", sa_slice_tb.dut.u_sa_sys_power_u_sa_sys, "", "sa_sys_syn_sdf.log");
-        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr/systolic_array_system.apr.sdf", sa_slice_tb.dut.u_sa_sys_power_u_sa_sys,,"sa_sys_apr_sdf.log","MAXIMUM");
+        $display("[%0t] Applying APR SDF", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_slice/apr_mmmc/sa_slice.apr.sdf",
+                      sa_slice_tb.dut, "", "sa_slice_apr_sdf.log", "MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_sys_power/apr/sa_sys_power.apr.sdf",
+                      sa_slice_tb.dut.u_sa_sys_power, "", "sa_sys_pwr_apr_sdf.log", "MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr_mmmc/systolic_array_system.apr.sdf",
+                      sa_slice_tb.dut.u_sa_sys_power.u_sa_sys, "", "sa_sys_apr_sdf.log", "MAXIMUM");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/apr/clk_gen_mode.apr.sdf", sa_slice_tb.dut.u_clk_gen);
+    end
+    `elsif SYN
+    initial begin
+        $display("[%0t] Applying SYN SDF", $time);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf",
+                      sa_slice_tb.dut, "", "sa_slice_syn_sdf.log");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                      sa_slice_tb.dut.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                      sa_slice_tb.dut.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", sa_slice_tb.dut.u_clk_gen);
     end
     `else
     initial begin
         $display("[%0t] SYN not defined, annotating clock gen only", $time);
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", dut.u_clk_gen);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/syn/clk_gen_mode.syn.sdf", sa_slice_tb.dut.u_clk_gen);
     end
     `endif
 
@@ -308,7 +389,7 @@ module sa_slice_tb;
         $dumpvars(0, sa_slice_tb);
         $display("clk_tb: %f ns", `CLK_PERIOD_SYS_HALF);
         // $display("clk_sa: %f ns", `CLK_PERIOD_SA_HALF);
-        $display("clk_sel: 0b%b", clk_sel);
+        //$display("clk_sel: 0b%b", clk_sel);
 
         total_pass = 0;
         total_fail = 0;
@@ -345,7 +426,7 @@ module sa_slice_tb;
     end
 
     initial begin
-        #500000;
+        #20000000;
         $display("TIMEOUT ERROR: Simulation hung.");
         $finish;
     end

@@ -59,6 +59,8 @@ module mmu #(
     input  logic                      i_npu_bvalid, //need to use this; says that all the bursts are done writing
     output logic                      o_npu_bready //ready to receive bready
 );
+    assign o_npu_arsize = 3'b010;
+    assign o_npu_wstrb = 4'hF;
 
     typedef enum logic [2:0] { 
         IDLE,   // wait for signal from the
@@ -129,7 +131,7 @@ module mmu #(
     // ==============================================================================
     logic [CPU_ADDR_WIDTH-1:0]     next_npu_araddr;
     logic [7:0]                    next_npu_arlen;
-    logic [2:0]                    next_npu_arsize;
+    // logic [2:0]                    next_npu_arsize;
     logic                          next_npu_arvalid;
     logic                          next_npu_rready;
 
@@ -141,7 +143,7 @@ module mmu #(
     logic [2:0]                    next_npu_awsize;
     logic                          next_npu_awvalid;
     logic [CPU_DATA_WIDTH-1:0]     next_npu_wdata;
-    logic [3:0]                    next_npu_wstrb;
+    // logic [3:0]                    next_npu_wstrb;
     logic                          next_npu_wlast;
     logic                          next_npu_wvalid;
     logic                          next_npu_bready;
@@ -371,7 +373,7 @@ module mmu #(
         // Default Assignments to pipeline wires
         next_npu_araddr  = '0; 
         next_npu_arlen   = '0;
-        next_npu_arsize  = '0;
+        // next_npu_arsize  = '0;
         next_npu_arvalid = 1'b0;
         next_npu_rready  = 1'b0;
 
@@ -383,7 +385,7 @@ module mmu #(
         next_npu_awsize  = '0;
         next_npu_awvalid = 1'b0;
         next_npu_wdata   = '0;
-        next_npu_wstrb   = '0;
+        // next_npu_wstrb   = '0;
         next_npu_wlast   = 1'b0;
         next_npu_wvalid  = 1'b0;
         next_npu_bready  = 1'b1;
@@ -407,7 +409,7 @@ module mmu #(
             SEND_READ_REQ : begin
                 next_npu_araddr = current_addr; 
                 next_npu_arlen = (row_beats_remaining > 256) ? 8'd255 : (row_beats_remaining - 1);
-                next_npu_arsize = 3'b010;
+                // next_npu_arsize = 3'b010;
                 //next_npu_arvalid = 1'b1;
                 //drop immediately to prevent trailing.
                 next_npu_arvalid = !i_npu_arready;
@@ -456,7 +458,7 @@ module mmu #(
                 //Drop valid immediately on handshake 
                 //next_npu_wvalid = !i_npu_wready;
                 next_npu_wvalid = 1'b1;
-                next_npu_wstrb  = 4'hF; 
+                // next_npu_wstrb  = 4'hF; 
 
                 //if (beat_toggle == 1'b0) begin
                 if ((o_npu_wvalid && i_npu_wready) ? ~beat_toggle : beat_toggle) begin
@@ -498,7 +500,7 @@ module mmu #(
         if (!i_rst_n) begin
             o_npu_araddr  <= '0;
             o_npu_arlen   <= '0;
-            o_npu_arsize  <= '0;
+            // o_npu_arsize  <= '0;
             o_npu_arvalid <= 1'b0;
             o_npu_rready  <= 1'b0;
 
@@ -510,14 +512,14 @@ module mmu #(
             o_npu_awsize  <= '0;
             o_npu_awvalid <= 1'b0;
             o_npu_wdata   <= '0;
-            o_npu_wstrb   <= '0;
+            // o_npu_wstrb   <= '0;
             o_npu_wlast   <= 1'b0;
             o_npu_wvalid  <= 1'b0;
             o_npu_bready  <= 1'b1;
         end else begin
             o_npu_araddr  <= next_npu_araddr;
             o_npu_arlen   <= next_npu_arlen;
-            o_npu_arsize  <= next_npu_arsize;
+            // o_npu_arsize  <= next_npu_arsize;
             o_npu_arvalid <= next_npu_arvalid;
             o_npu_rready  <= next_npu_rready;
 
@@ -529,7 +531,7 @@ module mmu #(
             o_npu_awsize  <= next_npu_awsize;
             o_npu_awvalid <= next_npu_awvalid;
             o_npu_wdata   <= next_npu_wdata;
-            o_npu_wstrb   <= next_npu_wstrb;
+            // o_npu_wstrb   <= next_npu_wstrb;
             o_npu_wlast   <= next_npu_wlast;
             o_npu_wvalid  <= next_npu_wvalid;
             o_npu_bready  <= next_npu_bready;

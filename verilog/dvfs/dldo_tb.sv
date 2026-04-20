@@ -17,12 +17,12 @@ module dldo_tb (
     // 1. Clock Generation
     initial begin
         DLDO_CLK = 0;
-        forever #5 DLDO_CLK = ~DLDO_CLK; // 10ns period (100MHz)
+        forever #3.3 DLDO_CLK = ~DLDO_CLK; // 10ns period (100MHz)
     end
 
     initial begin
         SENSE_CLK = 0;
-        forever #10 SENSE_CLK = ~SENSE_CLK; // 20ns period (50MHz)
+        forever #3.3 SENSE_CLK = ~SENSE_CLK; // 20ns period (50MHz)
     end
 
     // 2. Main Stimulus Sequence

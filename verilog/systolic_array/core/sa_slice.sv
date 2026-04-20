@@ -9,7 +9,7 @@ module sa_slice #(
 )(
     input  logic                     i_clk_sys,   // system-side clock (FIFO write / controller domain)
 //    input  logic                     i_clk_sa,    // systolic array-side clock (FIFO read / frontend / backend)
-    input  logic [2:0]               i_dvfs_req,  // was i_clk_sel, now controlled by the dvfs controller
+    input  logic [2:0]               i_clk_sel,  // was i_clk_sel, now controlled by the dvfs controller
     input  logic                     i_rst_n,
 
     // Backend control (all of these signals need proper cdc)
@@ -54,10 +54,10 @@ module sa_slice #(
     logic [2:0] ldo_band; // dldo to controller
     logic [2:0] clk_sel; // controller to clk_gen
     logic       sa_dvfs_rst_n;
-    logic       sa_sys_rst_n;
-    logic       input_fifo_wr_empty; // FIFO to controller
+    // logic       sa_sys_rst_n;
+    //logic       input_fifo_wr_empty; // FIFO to controller
 
-    assign sa_sys_rst_n = i_rst_n & sa_dvfs_rst_n;
+    // assign sa_sys_rst_n = i_rst_n & sa_dvfs_rst_n;
 
     clk_gen_mode u_clk_gen (
         .rstn_i     (i_rst_n),
@@ -167,7 +167,7 @@ module sa_slice #(
         //.i_wr_data        (i_push_act_data),
         .i_wr_data        (input_fifo_wdata),
         .i_wr_en          (staged_push_en),
-        .o_wr_empty       (input_fifo_wr_empty),
+        .o_wr_empty       (),
         .o_wr_almost_empty(),
         .o_wr_half_full   (),
         .o_wr_almost_full (input_fifo_af),
@@ -184,19 +184,19 @@ module sa_slice #(
     );
 
     dvfs_controller #(
-        parameter IDLE_TIMEOUT = 300
+        .IDLE_TIMEOUT(300000)
     ) u_dvfs_ctrl (
         .i_clk_sys          (i_clk_sys),
         .i_rst_n            (i_rst_n),
-        .i_req              (i_dvfs_req), // programmer-requested DVFS level
-        .i_fifo_empty       (input_fifo_wr_empty),
+        .i_req              (i_clk_sel), // programmer-requested DVFS level
+        .i_fifo_empty       (input_fifo_empty),
         .i_ldo_adc_out      (ldo_band), // from dldo
 
         .o_p_dvfs_sel       (dvfs_sel),
         .o_p_ldo_cutoff     (dvfs_cutoff),
         .o_clk_sel          (clk_sel), // clk gen output
         .o_sa_rst_n         (sa_dvfs_rst_n)        // reset released only after power-up is good
-    )
+    );
 
     dldo u_dldo (    
         .p_clk              (i_clk_sys),         // PE clock
@@ -279,7 +279,7 @@ module sa_slice #(
 
         // Input side
         .i_clk_sa              (clk_sa),
-        .i_rst_n               (sa_sys_rst_n), // was i_rst_n
+        .i_rst_n               (sa_dvfs_rst_n), // was i_rst_n
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
         .i_fifo_info_data      (info_fifo_rdata),

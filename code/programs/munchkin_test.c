@@ -54,7 +54,7 @@ int main() {
     while(!npu_bank_switch_done());
     
     print_str("Computing!\n");
-    npu_clock_cfg(0);
+    npu_clock_cfg(5);
     npu_compute(cfg_mem_ptr->HI, cfg_mem_ptr->WI,  cfg_mem_ptr->CI,  cfg_mem_ptr->SCALE_AMT, cfg_mem_ptr->PADDING, cfg_mem_ptr->STRIDE, cfg_mem_ptr->RELU_EN, cfg_mem_ptr->MAXPOOL_EN);
     while(!npu_compute_done());
 

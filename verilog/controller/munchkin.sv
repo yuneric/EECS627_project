@@ -21,7 +21,7 @@ module munchkin #(
     // Cpu trace signals
     output          o_trap       , 
     output          o_trace_valid,
-    output [35:0]   o_trace_data ,
+    output [33:0]   o_trace_data ,
 
     // Axi Arbiter to off chip memory
     output                      o_mem_valid,
