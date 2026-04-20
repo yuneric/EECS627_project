@@ -9,7 +9,7 @@ module sa_slice #(
 )(
     input  logic                     i_clk_sys,   // system-side clock (FIFO write / controller domain)
 //    input  logic                     i_clk_sa,    // systolic array-side clock (FIFO read / frontend / backend)
-    input  logic [2:0]               i_clk_sel, 
+    input  logic [2:0]               i_dvfs_req,  // was i_clk_sel, now controlled by the dvfs controller
     input  logic                     i_rst_n,
 
     // Backend control (all of these signals need proper cdc)
@@ -45,12 +45,23 @@ module sa_slice #(
 
     // Clock generator for this slice
     wire        clk_sa;
-    wire  [7:0] pmos_val;
-    wire [11:0] adc_out;
+    wire  [7:0] pmos_val; // from dldo
+    wire [11:0] adc_out;  // now used by dldo
+
+    // dvfs mesh
+    logic [2:0] dvfs_sel; // controller to dldo
+    logic       dvfs_cutoff; // controller to dldo
+    logic [2:0] ldo_band; // dldo to controller
+    logic [2:0] clk_sel; // controller to clk_gen
+    logic       sa_dvfs_rst_n;
+    logic       sa_sys_rst_n;
+    logic       input_fifo_wr_empty; // FIFO to controller
+
+    assign sa_sys_rst_n = i_rst_n & sa_dvfs_rst_n;
 
     clk_gen_mode u_clk_gen (
         .rstn_i     (i_rst_n),
-        .osc_sel_i  (i_clk_sel),
+        .osc_sel_i  (clk_sel),
         .clk_o      (clk_sa)
     );
 
@@ -156,7 +167,7 @@ module sa_slice #(
         //.i_wr_data        (i_push_act_data),
         .i_wr_data        (input_fifo_wdata),
         .i_wr_en          (staged_push_en),
-        .o_wr_empty       (),
+        .o_wr_empty       (input_fifo_wr_empty),
         .o_wr_almost_empty(),
         .o_wr_half_full   (),
         .o_wr_almost_full (input_fifo_af),
@@ -172,6 +183,33 @@ module sa_slice #(
         .o_rd_full        ()
     );
 
+    dvfs_controller #(
+        parameter IDLE_TIMEOUT = 300
+    ) u_dvfs_ctrl (
+        .i_clk_sys          (i_clk_sys),
+        .i_rst_n            (i_rst_n),
+        .i_req              (i_dvfs_req), // programmer-requested DVFS level
+        .i_fifo_empty       (input_fifo_wr_empty),
+        .i_ldo_adc_out      (ldo_band), // from dldo
+
+        .o_p_dvfs_sel       (dvfs_sel),
+        .o_p_ldo_cutoff     (dvfs_cutoff),
+        .o_clk_sel          (clk_sel), // clk gen output
+        .o_sa_rst_n         (sa_dvfs_rst_n)        // reset released only after power-up is good
+    )
+
+    dldo u_dldo (    
+        .p_clk              (i_clk_sys),         // PE clock
+        .p_rst_n            (i_rst_n),       // Active low reset
+        
+        // Hardcoded widths to avoid AMS-2151 netlisting errors
+        .p_dvfs_sel         (dvfs_sel),    // External voltage level selection
+        .p_ldo_cutoff       (dvfs_cutoff),  // Power cut off signal
+        .flash_adc_in       (adc_out),  // Internal input from flash adc (flash_adc_12)
+    
+        .p_ldo_adc_out      (ldo_band), // Converted flash adc out (for Power Good)
+        .pmos_drv_bin       (pmos_val)   // 8-bit Binary Output (Inverted: 8'hFF = All OFF)
+    );
     // Perform the cdc crossing for the maxpool, relu, and shift amt
     logic internal_relu_en;
     logic internal_maxpool_en;
@@ -241,7 +279,7 @@ module sa_slice #(
 
         // Input side
         .i_clk_sa              (clk_sa),
-        .i_rst_n               (i_rst_n),
+        .i_rst_n               (sa_sys_rst_n), // was i_rst_n
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
         .i_fifo_info_data      (info_fifo_rdata),
