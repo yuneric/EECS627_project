@@ -485,6 +485,25 @@ module computation_overseer #(
         end
     end
 
+    `ifdef PROFILE
+        int num_drains;
+
+        initial begin
+            num_drains = 0;
+        end
+
+        always @(posedge i_clk) begin
+            if(o_data_last) begin
+                num_drains += 1;
+            end else if (state == IDLE) begin
+                if(num_drains != 0) begin
+                    $display("Num DRAINS: %d", num_drains);
+                end;
+                num_drains = 0;
+            end
+        end
+    `endif
+
 endmodule
 
 

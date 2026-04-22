@@ -54,6 +54,7 @@ module sa_slice #(
     logic [2:0] ldo_band; // dldo to controller
     logic [2:0] clk_sel; // controller to clk_gen
     logic       sa_dvfs_rst_n;
+    logic       sa_dvfs_rst_n_DRIVE;
     // logic       sa_sys_rst_n;
     //logic       input_fifo_wr_empty; // FIFO to controller
 
@@ -139,6 +140,7 @@ module sa_slice #(
     logic [INPUT_FIFO_W-1:0] input_fifo_rdata;
     logic                    input_fifo_empty;
     logic                    input_fifo_af;
+    logic                    dvfs_fifo_empty;
 
     // assign all_three_fifo_available = !act_fifo_empty && !weight_fifo_empty && !info_fifo_empty;
     assign all_three_fifo_available = !input_fifo_empty;
@@ -167,7 +169,7 @@ module sa_slice #(
         //.i_wr_data        (i_push_act_data),
         .i_wr_data        (input_fifo_wdata),
         .i_wr_en          (staged_push_en),
-        .o_wr_empty       (),
+        .o_wr_empty       (dvfs_fifo_empty),
         .o_wr_almost_empty(),
         .o_wr_half_full   (),
         .o_wr_almost_full (input_fifo_af),
@@ -184,12 +186,13 @@ module sa_slice #(
     );
 
     dvfs_controller #(
-        .IDLE_TIMEOUT(300000)
+        .IDLE_TIMEOUT(300000),
+        .POWER_ON_DELAY(40)
     ) u_dvfs_ctrl (
         .i_clk_sys          (i_clk_sys),
         .i_rst_n            (i_rst_n),
         .i_req              (i_clk_sel), // programmer-requested DVFS level
-        .i_fifo_empty       (input_fifo_empty),
+        .i_fifo_empty       (dvfs_fifo_empty),
         .i_ldo_adc_out      (ldo_band), // from dldo
 
         .o_p_dvfs_sel       (dvfs_sel),
@@ -217,29 +220,43 @@ module sa_slice #(
     logic cdc_req1, cdc_req2;
     logic cdc_ack1, cdc_ack2;
     
-    always_ff @(posedge clk_sa) begin
-        // Syncronization of REQ
-        cdc_req2 <= cdc_req1;
-        cdc_req1 <= i_cdc_req;
+    always_ff @(posedge clk_sa or negedge i_rst_n) begin
+        if(!i_rst_n) begin
+            cdc_req2 <= '0;
+            cdc_req1 <= '0;
+            internal_relu_en <= '0;
+            internal_maxpool_en <= '0;
+            internal_shift_by <= '0;
+        end else begin
+            // Syncronization of REQ
+            cdc_req2 <= cdc_req1;
+            cdc_req1 <= i_cdc_req;
 
-        // Perform feedback
-        cdc_ack1 <= 0;
-        if(cdc_req2) begin
-            cdc_ack1 <= 1;
-        end
+            // Perform feedback
+            cdc_ack1 <= 0;
+            if(cdc_req2) begin
+                cdc_ack1 <= 1;
+            end
 
-        // Generate a load enable signal
-        if(cdc_req2 & !cdc_ack1) begin
-            internal_relu_en <= i_relu_en;
-            internal_maxpool_en <= i_maxpool_en;
-            internal_shift_by <= i_shift_by;
+            // Generate a load enable signal
+            if(cdc_req2 & !cdc_ack1) begin
+                internal_relu_en <= i_relu_en;
+                internal_maxpool_en <= i_maxpool_en;
+                internal_shift_by <= i_shift_by;
+            end
         end
     end
 
-    always_ff @(posedge i_clk_sys) begin
-        // Syncronization of ACK
-        cdc_ack2  <= cdc_ack1;
-        o_cdc_ack <= cdc_ack2;
+    always_ff @(posedge i_clk_sys or negedge i_rst_n) begin
+        if(!i_rst_n) begin
+            // Make sure ack starts low
+            cdc_ack2  <= '0;
+            o_cdc_ack <= '0;
+        end else begin
+            // Syncronization of ACK
+            cdc_ack2  <= cdc_ack1;
+            o_cdc_ack <= cdc_ack2;
+        end
     end
 
     // SA TO OUTPUT BUFFER
@@ -271,6 +288,11 @@ module sa_slice #(
     //     .o_final_valid         (final_valid)
     // );
 
+    CLKBUF u_reset_driver (
+        .IN(sa_dvfs_rst_n),
+        .OUT(sa_dvfs_rst_n_DRIVE)
+    );
+    
     sa_sys_power u_sa_sys_power (
         // DVFS
         .i_clk_sys             (i_clk_sys), // core-side clock for sensing and pmos ladders (global domain)
@@ -279,7 +301,7 @@ module sa_slice #(
 
         // Input side
         .i_clk_sa              (clk_sa),
-        .i_rst_n               (sa_dvfs_rst_n), // was i_rst_n
+        .i_rst_n               (sa_dvfs_rst_n_DRIVE), // was i_rst_n
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
         .i_fifo_info_data      (info_fifo_rdata),

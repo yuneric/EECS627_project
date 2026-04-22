@@ -32,8 +32,8 @@ localparam int MAX_PMOS   = 256;
 localparam int INITIAL_STARTUP_VALUE = 64;
 
 // Tuning Parameters for PI Control (Gain = 2^SHIFT)
-localparam int KP_SHIFT = 2;  // Proportional gain (e.g., 2 means x4)
-localparam int KI_HIGH_SHIFT = 2; // Adds 4 PMOS per cycle when stuck
+localparam int KP_SHIFT = 0;  // Proportional gain (e.g., 2 means x4)
+localparam int KI_HIGH_SHIFT = 0;
 
 // --- State Variables ---
 logic [8:0] count; // 9 bits to safely hold up to 256, strictly clamped 0-255
@@ -93,15 +93,6 @@ always_comb begin
     
 end
 
-// 
-
-// Convert ADC reading from unary/thermometer to binary
-// always_comb begin
-//     p_ldo_adc_out = '0;
-//     for(int i = 0; i < DVFS_SLOTS; i++) begin
-//         p_ldo_adc_out += flash_adc_in[i];
-//     end
-// end
 
 // Binary PMOS Drive (Active Low / Inverse Polarity)
 always_comb begin
@@ -123,20 +114,14 @@ assign current_val = {1'b0, adc_count_raw};
 assign error       = target_val - current_val;
 assign delta_error = error - prev_error;
 
-// 1. Hardware-efficient "Small Error" detection
+// Hardware-efficient "Small Error" detection
 assign err_is_small      = (error == 5'sd0) || (error == 5'sd1) || (error == -5'sd1);
 assign prev_err_is_small = (prev_error == 5'sd0) || (prev_error == 5'sd1) || (prev_error == -5'sd1);
 
-// 2. NEW: Bouncing Detector
-// True steady state means the error is 0, OR the error successfully changed from last cycle
-logic is_bouncing_or_zero;
-assign is_bouncing_or_zero = (error == 5'sd0) || (error != prev_error);
-
-// 3. Updated Steady State Condition
 // We only enter steady state if the error is small AND we aren't stuck on a droop
-assign steady_state = err_is_small && prev_err_is_small && is_bouncing_or_zero;
+assign steady_state = err_is_small && prev_err_is_small;
 
-// 4. Zone-Based Gain Scheduling
+// Zone-Based Gain Scheduling
 always_comb begin
     if (steady_state) begin
         // Inside the zone: Pure Integrator, Gain = 1 (Exactly +/- 1 PMOS)
@@ -145,11 +130,11 @@ always_comb begin
     end else begin
         // Outside the zone (or stuck in a droop!): High-Gain Acceleration
         p_term = delta_error <<< KP_SHIFT;
-        i_term = error <<< KI_HIGH_SHIFT; // Uses the new higher gain!
+        i_term = error <<< KI_HIGH_SHIFT; 
     end
 end
 
-// Calculate the raw next count
+// Calculate the raw next count, not apply p_term if going down
 always_comb begin
 	if(p_term < 0) next_count_calc = $signed({2'b00, count}) + i_term;
 	else next_count_calc = $signed({2'b00, count}) + p_term + i_term;
@@ -169,8 +154,8 @@ always_ff @(posedge p_clk or negedge p_rst_n) begin
         // Saturation/Anti-Windup Logic limits `count` strictly between 0 and 255
         if (next_count_calc > (MAX_PMOS - 1))
             count <= MAX_PMOS - 1;
-        else if (next_count_calc < 0)
-            count <= 0;
+        else if (next_count_calc <= 0)
+            count <= 1;
         else
             count <= next_count_calc[8:0];
     end
@@ -179,8 +164,8 @@ end
 // Debugging: Monitor variables in SimVision Console
 // initial begin
 //     $display("AMS_DEBUG: DLDO Binary PI Module Initialized");
-//     $monitor("TIME: %0t | RST: %b | ADC: %d | SEL: %d | ERR: %d | COUNT: %d | PMOS_DRV: %b | is_bouncing_or_zero: %b", 
-//               $time, p_rst_n, p_ldo_adc_out, p_dvfs_sel, error, count, pmos_drv_bin, is_bouncing_or_zero);
+//     $monitor("TIME: %0t | RST: %b | ADC: %d | SEL: %d | ERR: %d | COUNT: %d | PMOS_DRV: %b", 
+//               $time, p_rst_n, p_ldo_adc_out, p_dvfs_sel, error, count, pmos_drv_bin);
 // end
 
 endmodule

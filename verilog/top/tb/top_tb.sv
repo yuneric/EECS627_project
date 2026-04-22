@@ -22,6 +22,7 @@
 `define OUTPUT_START_ADDR 19
 `define OUTPUT_END_ADDR 20
 
+
 module top_tb;
 
     parameter NUM_ARRAYS            = 8;
@@ -118,114 +119,323 @@ module top_tb;
 
     genvar top_i;
     generate
-        for (top_i = 0; top_i < NUM_ARRAYS/2; top_i = top_i + 1) begin
-            // --- ANALOG FEEDBACK LOOP MIMIC (Per Top Array) ---
-            integer active_pmos;
-            integer current_fake_vcore_mv = 0;
-            integer target_vcore_mv;
-            localparam integer MV_SLEW_RATE = 5; 
-            logic [11:0] mock_A;
+        for (top_i = 0; top_i < NUM_ARRAYS/2; top_i = top_i + 2) begin
+            // --- ANALOG FEEDBACK LOOP MIMIC (Per Top Array Generate Block) ---
+            localparam integer MV_SLEW_RATE = 5;
 
-            always @(posedge tb_clk) begin
+            // Inner Slice Tracking Variables
+            integer active_pmos_inner;
+            integer current_fake_vcore_mv_inner = 0;
+            integer target_vcore_mv_inner;
+            logic [11:0] mock_A_inner;
+
+            // Outer Slice Tracking Variables
+            integer active_pmos_outer;
+            integer current_fake_vcore_mv_outer = 0;
+            integer target_vcore_mv_outer;
+            logic [11:0] mock_A_outer;
+
+            always @(posedge clk_sys) begin
                 if (!rstn_async) begin
-                    current_fake_vcore_mv <= 0;
-                    mock_A <= 12'b0;
+                    current_fake_vcore_mv_inner <= 0;
+                    mock_A_inner <= 12'b0;
+
+                    current_fake_vcore_mv_outer <= 0;
+                    mock_A_outer <= 12'b0;
                 end else begin
-                    // 1. Read the PMOS drive from THIS specific slice
-                    active_pmos = 255 - dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.pmos_val; 
+                    // 1. Read the PMOS drive independently
+                    active_pmos_inner = 255 - dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.pmos_val;
+                    active_pmos_outer = 255 - dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_outer.pmos_val;
 
-                    // 2. Calculate the target steady-state voltage
-                    target_vcore_mv = active_pmos * 5;
+                    // 2. Calculate independent target steady-state voltages
+                    target_vcore_mv_inner = active_pmos_inner * 5;
+                    target_vcore_mv_outer = active_pmos_outer * 5;
 
-                    // 3. Fake the RC Charging/Discharging physics (Slew Rate)
-                    if (current_fake_vcore_mv < target_vcore_mv) begin
-                        if ((target_vcore_mv - current_fake_vcore_mv) < MV_SLEW_RATE)
-                            current_fake_vcore_mv <= target_vcore_mv;
+                    // 3. Fake RC Charging/Discharging for INNER
+                    if (current_fake_vcore_mv_inner < target_vcore_mv_inner) begin
+                        if ((target_vcore_mv_inner - current_fake_vcore_mv_inner) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_inner <= target_vcore_mv_inner;
                         else
-                            current_fake_vcore_mv <= current_fake_vcore_mv + MV_SLEW_RATE;
-                    end 
-                    else if (current_fake_vcore_mv > target_vcore_mv) begin
-                        if ((current_fake_vcore_mv - target_vcore_mv) < MV_SLEW_RATE)
-                            current_fake_vcore_mv <= target_vcore_mv;
+                            current_fake_vcore_mv_inner <= current_fake_vcore_mv_inner + MV_SLEW_RATE;
+                    end
+                    else if (current_fake_vcore_mv_inner > target_vcore_mv_inner) begin
+                        if ((current_fake_vcore_mv_inner - target_vcore_mv_inner) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_inner <= target_vcore_mv_inner;
                         else
-                            current_fake_vcore_mv <= current_fake_vcore_mv - MV_SLEW_RATE;
+                            current_fake_vcore_mv_inner <= current_fake_vcore_mv_inner - MV_SLEW_RATE;
                     end
 
-                    // 4. ADC Threshold Logic 
+                    // 4. Fake RC Charging/Discharging for OUTER
+                    if (current_fake_vcore_mv_outer < target_vcore_mv_outer) begin
+                        if ((target_vcore_mv_outer - current_fake_vcore_mv_outer) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_outer <= target_vcore_mv_outer;
+                        else
+                            current_fake_vcore_mv_outer <= current_fake_vcore_mv_outer + MV_SLEW_RATE;
+                    end
+                    else if (current_fake_vcore_mv_outer > target_vcore_mv_outer) begin
+                        if ((current_fake_vcore_mv_outer - target_vcore_mv_outer) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_outer <= target_vcore_mv_outer;
+                        else
+                            current_fake_vcore_mv_outer <= current_fake_vcore_mv_outer - MV_SLEW_RATE;
+                    end
+
+                    // 5. ADC Threshold Logic for Both
                     for (int i = 0; i < 12; i = i + 1) begin
-                        mock_A[i] <= (current_fake_vcore_mv >= (600 + i*50));
+                        mock_A_inner[i] <= (current_fake_vcore_mv_inner >= (600 + i*50));
+                        mock_A_outer[i] <= (current_fake_vcore_mv_outer >= (600 + i*50));
                     end
                 end
             end
 
-            // 5. Inject the calculated outputs straight into THIS LVS black-box
+            // 6. Inject the calculated outputs straight into LVS black-box
             initial begin
-                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power.u_adc.A = mock_A;
-                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power.u_adc.B = ~mock_A;
+                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power.u_adc.A = mock_A_inner;
+                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power.u_adc.B = ~mock_A_inner;
+
+                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_outer.u_sa_sys_power.u_adc.A = mock_A_outer;
+                force dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_outer.u_sa_sys_power.u_adc.B = ~mock_A_outer;
             end
 
-            `ifdef APR
-                initial begin
-                    // SDF annotations omitted for brevity, keep your original ones here
+            // `ifdef APR
+            //     initial begin
+                   
+            //     end
+            // `elsif SYN
+            //     initial begin 
+            //         $display("[%0t] Applying SYN SDF to BOTTOM_SYSTOLIC_ARRAYS[%0d]", $time, bot_i);
+        
+            //         // Annotate the specific slice instance in the current generate iteration
+            //         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf",
+            //                     dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner, , "sa_slice_bot_inner.log");
+                    
+            //         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf",
+            //                     dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_outer, , "sa_slice_bot_outer.log");
+
+            //         // Annotate the power/system logic inside those slices
+            //         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+            //                     dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power, , "pwr_bot_inner.log");
+                                
+            //         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+            //                     dut.TOP_SYSTOLIC_ARRAYS[top_i].slice_inner.u_sa_sys_power.u_sa_sys, , "sys_bot_inner.log");
+ 
+            //     end
+            // `endif
+
+        end
+    endgenerate
+
+    genvar bot_i;
+    generate
+        for (bot_i = 0; bot_i < NUM_ARRAYS/2; bot_i = bot_i + 2) begin
+            // --- ANALOG FEEDBACK LOOP MIMIC (Per Top Array Generate Block) ---
+            localparam integer MV_SLEW_RATE = 5;
+
+            // Inner Slice Tracking Variables
+            integer active_pmos_inner;
+            integer current_fake_vcore_mv_inner = 0;
+            integer target_vcore_mv_inner;
+            logic [11:0] mock_A_inner;
+
+            // Outer Slice Tracking Variables
+            integer active_pmos_outer;
+            integer current_fake_vcore_mv_outer = 0;
+            integer target_vcore_mv_outer;
+            logic [11:0] mock_A_outer;
+
+            always @(posedge clk_sys) begin
+                if (!rstn_async) begin
+                    current_fake_vcore_mv_inner <= 0;
+                    mock_A_inner <= 12'b0;
+
+                    current_fake_vcore_mv_outer <= 0;
+                    mock_A_outer <= 12'b0;
+                end else begin
+                    // 1. Read the PMOS drive independently
+                    active_pmos_inner = 255 - dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner.pmos_val;
+                    active_pmos_outer = 255 - dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_outer.pmos_val;
+
+                    // 2. Calculate independent target steady-state voltages
+                    target_vcore_mv_inner = active_pmos_inner * 5;
+                    target_vcore_mv_outer = active_pmos_outer * 5;
+
+                    // 3. Fake RC Charging/Discharging for INNER
+                    if (current_fake_vcore_mv_inner < target_vcore_mv_inner) begin
+                        if ((target_vcore_mv_inner - current_fake_vcore_mv_inner) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_inner <= target_vcore_mv_inner;
+                        else
+                            current_fake_vcore_mv_inner <= current_fake_vcore_mv_inner + MV_SLEW_RATE;
+                    end
+                    else if (current_fake_vcore_mv_inner > target_vcore_mv_inner) begin
+                        if ((current_fake_vcore_mv_inner - target_vcore_mv_inner) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_inner <= target_vcore_mv_inner;
+                        else
+                            current_fake_vcore_mv_inner <= current_fake_vcore_mv_inner - MV_SLEW_RATE;
+                    end
+
+                    // 4. Fake RC Charging/Discharging for OUTER
+                    if (current_fake_vcore_mv_outer < target_vcore_mv_outer) begin
+                        if ((target_vcore_mv_outer - current_fake_vcore_mv_outer) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_outer <= target_vcore_mv_outer;
+                        else
+                            current_fake_vcore_mv_outer <= current_fake_vcore_mv_outer + MV_SLEW_RATE;
+                    end
+                    else if (current_fake_vcore_mv_outer > target_vcore_mv_outer) begin
+                        if ((current_fake_vcore_mv_outer - target_vcore_mv_outer) < MV_SLEW_RATE)
+                            current_fake_vcore_mv_outer <= target_vcore_mv_outer;
+                        else
+                            current_fake_vcore_mv_outer <= current_fake_vcore_mv_outer - MV_SLEW_RATE;
+                    end
+
+                    // 5. ADC Threshold Logic for Both
+                    for (int i = 0; i < 12; i = i + 1) begin
+                        mock_A_inner[i] <= (current_fake_vcore_mv_inner >= (600 + i*50));
+                        mock_A_outer[i] <= (current_fake_vcore_mv_outer >= (600 + i*50));
+                    end
                 end
-            `elsif SYN
-                initial begin
-                    // SDF annotations omitted for brevity, keep your original ones here
-                end
-            `endif
+            end
+
+            // 6. Inject the calculated outputs straight into LVS black-box
+            initial begin
+                force dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner.u_sa_sys_power.u_adc.A = mock_A_inner;
+                force dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner.u_sa_sys_power.u_adc.B = ~mock_A_inner;
+
+                force dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_outer.u_sa_sys_power.u_adc.A = mock_A_outer;
+                force dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_outer.u_sa_sys_power.u_adc.B = ~mock_A_outer;
+            end
+
+            // `ifdef APR
+            //     initial begin
+                    
+            //     end
+            // `elsif SYN
+            //     initial begin
+            //         // $display("[%0t] Applying SYN SDF to BOTTOM_SYSTOLIC_ARRAYS[%0d]", $time, bot_i);
+        
+            //         // // Annotate the specific slice instance in the current generate iteration
+            //         // $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf",
+            //         //             dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner, , "sa_slice_bot_inner.log");
+                    
+            //         // $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf",
+            //         //             dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_outer, , "sa_slice_bot_outer.log");
+
+            //         // // Annotate the power/system logic inside those slices
+            //         // $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+            //         //             dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner.u_sa_sys_power, , "pwr_bot_inner.log");
+                                
+            //         // $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+            //         //             dut.BOTTOM_SYSTOLIC_ARRAYS[bot_i].slice_inner.u_sa_sys_power.u_sa_sys, , "sys_bot_inner.log");
+            //     end
+            // `endif
 
         end
     endgenerate
 
 
-    integer active_pmos;
-    integer current_fake_vcore_mv = 0;
-    integer target_vcore_mv;
-    localparam integer MV_SLEW_RATE = 5; 
-    logic [11:0] mock_A;
-
-    always @(posedge clk_sys) begin
-        if (!rstn_async) begin
-            current_fake_vcore_mv <= 0;
-            mock_A <= 12'b0;
-        end else begin
-            // 1. Read the PMOS drive from THIS specific slice
-            //just editing 1 should be fine.
-            active_pmos = 255 - dut.slice_inner.pmos_val; 
-
-            // 2. Calculate the target steady-state voltage
-            target_vcore_mv = active_pmos * 5;
-
-            // 3. Fake the RC Charging/Discharging physics (Slew Rate)
-            if (current_fake_vcore_mv < target_vcore_mv) begin
-                if ((target_vcore_mv - current_fake_vcore_mv) < MV_SLEW_RATE)
-                    current_fake_vcore_mv <= target_vcore_mv;
-                else
-                    current_fake_vcore_mv <= current_fake_vcore_mv + MV_SLEW_RATE;
-            end 
-            else if (current_fake_vcore_mv > target_vcore_mv) begin
-                if ((current_fake_vcore_mv - target_vcore_mv) < MV_SLEW_RATE)
-                    current_fake_vcore_mv <= target_vcore_mv;
-                else
-                    current_fake_vcore_mv <= current_fake_vcore_mv - MV_SLEW_RATE;
-            end
-
-            // 4. ADC Threshold Logic 
-            for (int i = 0; i < 12; i = i + 1) begin
-                mock_A[i] <= (current_fake_vcore_mv >= (600 + i*50));
-            end
-        end
-    end
-
-    // 5. Inject the calculated outputs straight into THIS LVS black-box
     initial begin
-        // force dut_sa_slice.u_sa_sys_power.u_adc.A = mock_A;
-        // force dut_sa_slice.u_sa_sys_power.u_adc.B = ~mock_A;
-        dut.slice_inner.u_sa_sys_power.u_adc.A = mock_A;
-        dut.slice_inner.u_sa_sys_power.u_adc.B = ~mock_A;
+        `ifdef APR
+            // Removed nested initial begin
+            $display("[%0t] Starting APR Simulation", $time);
+        `elsif SYN
+            // Removed nested initial begin
+            $display("[%0t] Applying SYN SDF Annotations", $time);
+            
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/dunkin_donuts/dunkin_donuts.syn.sdf", 
+                    dut.core);
 
-        dut.slice_outer.u_sa_sys_power.u_adc.A = mock_A;
-        dut.slice_outer.u_sa_sys_power.u_adc.B = ~mock_A;
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/mmu/mmu.syn.sdf",
+                        dut.core.u_munchkin_mmu_inst);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/computation_overseer/computation_overseer.syn.sdf",
+                        dut.core.u_munchkin_comp_over_inst);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/controller/controller.syn.sdf",
+                        dut.core.u_munchkin_controller_inst);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/picorv32/picorv32.syn.sdf",
+                        dut.core.u_munchkin_proc);
+
+             
+
+            // TOP ARRAY 0
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf", 
+                    dut.TOP_SYSTOLIC_ARRAYS_0__slice_inner, , "top_0_inner.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", 
+                    dut.TOP_SYSTOLIC_ARRAYS_0__slice_outer, , "top_0_outer.log");
+            
+            //TOP ARRAY 0 - sys_power and sa_sys - sa_slice_thru
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_0__slice_inner.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                         dut.TOP_SYSTOLIC_ARRAYS_0__slice_inner.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+            //TOP ARRAY 0 - sys_power and sa_sys - sa_slice       
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_0__slice_outer.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_0__slice_outer.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+
+            // TOP ARRAY 2
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf", 
+                    dut.TOP_SYSTOLIC_ARRAYS_2__slice_inner, , "top_2_inner.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", 
+                    dut.TOP_SYSTOLIC_ARRAYS_2__slice_outer, , "top_2_outer.log");
+
+            //TOP ARRAY 2 - sys_power and sa_sys - sa_slice_thru
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_2__slice_inner.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                         dut.TOP_SYSTOLIC_ARRAYS_2__slice_inner.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+            //TOP ARRAY 2 - sys_power and sa_sys - sa_slice     
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_2__slice_outer.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                        dut.TOP_SYSTOLIC_ARRAYS_2__slice_outer.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+            
+
+            // BOTTOM ARRAY 0
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf", 
+                    dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_inner, , "bot_0_inner.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", 
+                    dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_outer, , "bot_0_outer.log");
+
+            //BOTTOM ARRAY 0 - sys_power and sa_sys - sa_slice_thru
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_inner.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                         dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_inner.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+            //BOTTOM ARRAY 0 - sys_power and sa_sys - sa_slice       
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_outer.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_0__slice_outer.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+            
+            // BOTTOM ARRAY 2
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice_thru/sa_slice_thru.syn.sdf", 
+                    dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_inner, , "bot_0_inner.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_slice/sa_slice.syn.sdf", 
+                    dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_outer, , "bot_0_outer.log");
+
+            //BOTTOM ARRAY 2 - sys_power and sa_sys - sa_slice_thru
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_inner.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                         dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_inner.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+
+            //BOTTOM ARRAY 2 - sys_power and sa_sys - sa_slice       
+            $display("[%0t] Applying SYN SDF", $time);
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_sys_power/sa_sys_power.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_outer.u_sa_sys_power, "", "sa_sys_pwr_syn_sdf.log");
+            $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/syn/sa_system/systolic_array_system.syn.sdf",
+                        dut.BOTTOM_SYSTOLIC_ARRAYS_2__slice_outer.u_sa_sys_power.u_sa_sys, "", "sa_sys_syn_sdf.log");
+        `endif
     end
 
     // =========================================================================
@@ -327,9 +537,9 @@ module top_tb;
     // Arg parsing and mem loading
     initial begin
         //dump for verdi
-        // $fsdbDumpfile("top_tb.fsdb");
-        // $fsdbDumpvars(0, top_tb);
-        // $fsdbDumpMDA();
+        $fsdbDumpfile("top_tb.fsdb");
+        $fsdbDumpvars(0, top_tb);
+        $fsdbDumpMDA();
 
         for (int j=0; j<MEM_WORDS; j++) prgm_memory[j] = 0;
         for (int j=0; j<MEM_WORDS; j++) cnn_memory[j] = 0;

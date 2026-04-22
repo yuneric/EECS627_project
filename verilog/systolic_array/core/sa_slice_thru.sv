@@ -42,7 +42,7 @@ module sa_slice_thru #(
     output logic                     o_pop_full,
 
     // THRU ports
-    output logic                     o_thru_rst_n,
+    //output logic                     o_thru_rst_n,
     output logic [2:0]               o_thru_clk_sel,
 
     // Backend control (all of these signals need proper cdc)
@@ -88,8 +88,9 @@ module sa_slice_thru #(
     // THRU ports
     always_comb begin
         // Forwards
+        // Bot to top (left side)
         o_thru_clk_sel          = i_clk_sel;
-        o_thru_rst_n            = i_rst_n;
+        //o_thru_rst_n            = i_rst_n;
         o_thru_cdc_req          = i_cdc_req;
         o_thru_relu_en          = i_relu_en;
         o_thru_shift_by         = i_shift_by;
@@ -100,14 +101,21 @@ module sa_slice_thru #(
         o_thru_wt_sram_wr_addr  = i_wt_sram_wr_addr;
         o_thru_wt_sram_wr_data  = i_wt_sram_wr_data;
 
-        // Pure passthroughs
+        // Pure passthroughs 
+        // top to bot (left side)
         o_thru_cdc_ack          = i_thru_cdc_ack;
-        o_thru_push_en          = i_thru_push_en;
         o_thru_push_af          = i_thru_push_af;
+
+        // bot to top (left side)
+        o_thru_push_en          = i_thru_push_en;
         o_thru_wt_sram_rd_en    = i_thru_wt_sram_rd_en;
         o_thru_wt_sram_wr_en    = i_thru_wt_sram_wr_en;
-        o_thru_pop_data         = i_thru_pop_data;
+
+        // bot to top (right side)
         o_thru_pop_en           = i_thru_pop_en;
+
+        // top to bot (right side)
+        o_thru_pop_data         = i_thru_pop_data;
         o_thru_pop_empty        = i_thru_pop_empty;
         o_thru_pop_ae           = i_thru_pop_ae;
         o_thru_pop_full         = i_thru_pop_full;
@@ -124,6 +132,7 @@ module sa_slice_thru #(
     logic [2:0] ldo_band; // dldo to controller
     logic [2:0] clk_sel; // controller to clk_gen
     logic       sa_dvfs_rst_n;
+    logic       sa_dvfs_rst_n_DRIVE;
     // logic       sa_sys_rst_n;
     //logic       input_fifo_wr_empty; // FIFO to controller
 
@@ -341,6 +350,15 @@ module sa_slice_thru #(
     //     .o_final_valid         (final_valid)
     // );
 
+    // reset_driver u_reset_driver (
+    //     .A(sa_dvfs_rst_n),
+    //     .Y(sa_dvfs_rst_n_DRIVE)
+    // );
+    CLKBUF u_reset_driver (
+        .IN(sa_dvfs_rst_n),
+        .OUT(sa_dvfs_rst_n_DRIVE)
+    );
+
     sa_sys_power u_sa_sys_power (
         // DVFS
         .i_clk_sys             (i_clk_sys), // core-side clock for sensing and pmos ladders (global domain)
@@ -349,7 +367,7 @@ module sa_slice_thru #(
 
         // Input side
         .i_clk_sa              (clk_sa),
-        .i_rst_n               (sa_dvfs_rst_n), // was i_rst_n
+        .i_rst_n               (sa_dvfs_rst_n_DRIVE), // was i_rst_n
         .i_fifo_act_data       (act_fifo_rdata),
         .i_fifo_weight_data    (weight_fifo_rdata),
         .i_fifo_info_data      (info_fifo_rdata),

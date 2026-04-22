@@ -11,7 +11,7 @@ module sa_slice_tb;
     parameter SHIFT_WIDTH  = 5;
     parameter INPUT_FIFO_DEPTH   = 16; 
     parameter OUTPUT_FIFO_DEPTH   = 8; 
-    parameter NUM_TESTS    = 3;
+    parameter NUM_TESTS    = 14;
     parameter WT_ADDR_WIDTH = 11;
     localparam int DW = DATA_WIDTH * WORD_SIZE;
     localparam int ACT_VEC_W = DATA_WIDTH * ARRAY_SIZE;
@@ -51,6 +51,14 @@ module sa_slice_tb;
 
     initial clk_sys = 0;
     always #(`CLK_PERIOD_SYS_HALF) clk_sys = ~clk_sys;
+
+    `ifdef APR
+        //real insertion_delay = 0; 
+        real insertion_delay = 1.2;
+        assign #(insertion_delay) tb_clk = clk_sys;
+    `else
+        assign tb_clk = clk_sys;
+    `endif
 
 
     // initial clk_sa = 0;
@@ -116,12 +124,12 @@ module sa_slice_tb;
 
     task  write_weight(input [WT_ADDR_WIDTH-1:0] addr, input [DW-1:0] data);
     begin
-        @(negedge clk_sys);
+        @(negedge tb_clk);
         wt_wr_addr = addr;
         wt_wr_data = data;
         wt_wr_en   = 1'b1;
-        @(posedge clk_sys);
-        @(negedge clk_sys);
+        @(posedge tb_clk);
+        @(negedge tb_clk);
         wt_wr_en = 1'b0;
         wt_wr_addr = '0;
         wt_wr_data = '0;
@@ -138,7 +146,7 @@ module sa_slice_tb;
 
     logic [11:0] mock_A;
 
-    always @(posedge clk_sys) begin
+    always @(posedge tb_clk) begin
         if (!rst_n) begin
             current_fake_vcore_mv <= 0;
             mock_A <= 12'b0;
@@ -216,51 +224,47 @@ module sa_slice_tb;
         wt_wr_addr      = '0;
         wt_wr_en        = 0;
         wt_wr_data      = '0;
-        user_req        = '0;
-
+        @(posedge tb_clk);
+        // user_req        = $urandom_range(0,4);
+        user_req        = 3'd0;
+        $display("user_req: %d", user_req);
+        //user_req        = 3'd5;
         #1000
-        // repeat (10) @(posedge clk_sys);
+        // repeat (10) @(posedge tb_clk);
         // repeat (10) @(posedge clk_sa);
+        @(negedge tb_clk);
         rst_n = 1;
-        repeat (10) @(posedge clk_sys);
-        // repeat (3) @(posedge clk_sa);
-        
-        // 1. Request the highest DVFS operating point
-        user_req = $urandom_range(0, 5); 
-        $display("  [time %0t] [DVFS] Requested random operating point (user_req) = %0d", $time, user_req);
-        
-        // 2. Wait for the DVFS controller to reach S_STABLE (state == 2)
-        // Without this, the testbench pushes data into a sleeping array!
+        repeat (10) @(posedge tb_clk);
         wait (dut.u_dvfs_ctrl.state == 3'd0);
-        
+        //repeat (10) @(posedge dut.clk_sa);
         // 3. Give it a few cycles to settle before pushing data
-        repeat (10) @(posedge clk_sys);
+        repeat (10) @(posedge tb_clk);
 
 
         for (int r = 0; r < data_len; r++) begin
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             write_weight(r, {DW{1'b0}});
         end
         for (int r = 0; r < data_len; r++) begin
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             write_weight(r, weight_data[r]);
         end
 
         for (int r = 0; r < data_len ; r++) begin
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             wt_rd_en = 1'b1;
             wt_rd_addr = r;
             //$display("SRAM[%0d] = %h  (wrote %h)", r, dut.weight_sram_rdata, weight_data[r]);
         end
 
         // Do the cdc handshake for the backend signals
-        @(posedge clk_sys);
+        @(posedge tb_clk);
         cdc_req = 1;
         wait(cdc_ack);
-        @(posedge clk_sys)
+        @(posedge tb_clk)
         cdc_req = 0;
         wait(~cdc_ack);
-        @(posedge clk_sys);
+        @(posedge tb_clk);
         wt_rd_en = 1'b0;
         write_idx   = 0;
         capture_idx = 0;
@@ -269,16 +273,16 @@ module sa_slice_tb;
         while (write_idx < data_len) begin
             if (write_idx % 100 == 0) begin
                 push_en = 0;
-                repeat (10) @(posedge clk_sys);
+                repeat (10) @(posedge tb_clk);
             end
 
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             #1;
             wt_rd_en   = 1'b1;
             wt_rd_addr = write_idx;
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             //user_req = $urandom_range(0, 5);
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             #1;
             //user_req = $urandom_range(0, 5);
 
@@ -294,13 +298,13 @@ module sa_slice_tb;
             end //else begin
                // $display("  [time %0t] FIFO full, stalling write %0d", $time, write_idx);
             //end
-            @(posedge clk_sys);
+            @(posedge tb_clk);
             #1;
             push_en     = 1'b0;
             push_data_last = 1'b0;
         end
 
-        @(negedge clk_sys);
+        @(negedge tb_clk);
         push_en     = 1'b0;
         push_data_last = 1'b0;
         wt_rd_en        = 1'b0;
@@ -308,13 +312,13 @@ module sa_slice_tb;
         cycle_count = 0;
         max_cycles  = data_len * 1000;
         while (capture_idx < num_output_rows && cycle_count < max_cycles) begin
-            repeat(2) @(posedge clk_sys);
+            repeat(2) @(posedge tb_clk);
             if (!pop_empty) begin
                 pop_en = 1;
                 captured_out[capture_idx] = pop_data;
                 $display("  [cycle %0t] Output %0d: %h", $time, capture_idx, pop_data);
                 capture_idx = capture_idx + 1;
-                @(posedge clk_sys);
+                @(posedge tb_clk);
                 pop_en = 0;
             end
             cycle_count = cycle_count + 1;
@@ -351,20 +355,22 @@ module sa_slice_tb;
                 total_fail = total_fail + 1;
             end
         end
-        repeat (10) @(posedge clk_sys);
+        repeat (10) @(posedge tb_clk);
     end
     endtask
 
     `ifdef APR
     initial begin
         $display("[%0t] Applying APR SDF", $time);
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_slice/apr_mmmc/sa_slice.apr.sdf",
-                      sa_slice_tb.dut, "", "sa_slice_apr_sdf.log", "MAXIMUM");
+         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_slice/apr_mmmc/sa_slice.apr.sdf",
+                       sa_slice_tb.dut, "", "sa_slice_apr_sdf.log", "MAXIMUM");
+        //$sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_slice/apr_mmmc/sa_slice_pt_signoff.sdf",
+        //              sa_slice_tb.dut, "", "sa_slice_apr_sdf.log", "MAXIMUM");
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_sys_power/apr/sa_sys_power.apr.sdf",
                       sa_slice_tb.dut.u_sa_sys_power, "", "sa_sys_pwr_apr_sdf.log", "MAXIMUM");
         $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/project/apr/sa_system_updated/apr_mmmc/systolic_array_system.apr.sdf",
                       sa_slice_tb.dut.u_sa_sys_power.u_sa_sys, "", "sa_sys_apr_sdf.log", "MAXIMUM");
-        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/apr/clk_gen_mode.apr.sdf", sa_slice_tb.dut.u_clk_gen);
+        $sdf_annotate("/afs/umich.edu/class/eecs627/w26/groups/group7/Clock_Gen/IBM130/apr/clk_gen_mode.apr.sdf", sa_slice_tb.dut.u_clk_gen, "", "clk_gen_apr_sdf.log", "MAXIMUM");
     end
     `elsif SYN
     initial begin
@@ -385,8 +391,10 @@ module sa_slice_tb;
     `endif
 
     initial begin
-        $dumpfile("tb_sa_slice.vcd");
-        $dumpvars(0, sa_slice_tb);
+        $fsdbDumpfile("sa_slice.fsdb");
+        $fsdbDumpvars(0, sa_slice_tb, "+all");
+        // $dumpfile("tb_sa_slice.vcd");
+        // $dumpvars(0, sa_slice_tb);
         $display("clk_tb: %f ns", `CLK_PERIOD_SYS_HALF);
         // $display("clk_sa: %f ns", `CLK_PERIOD_SA_HALF);
         //$display("clk_sel: 0b%b", clk_sel);
@@ -403,10 +411,10 @@ module sa_slice_tb;
         // capture_idx    = 0;
 
         // #1000
-        // // repeat (4) @(posedge clk_sys);
+        // // repeat (4) @(posedge tb_clk);
         // rst_n = 1;
-        // repeat (2) @(posedge clk_sys);
-        for (test_id = 0; test_id < NUM_TESTS; test_id = test_id + 1) begin
+        // repeat (2) @(posedge tb_clk);
+        for (test_id = 9; test_id < 10; test_id = test_id + 1) begin
             run_test(test_id);
         end
 
