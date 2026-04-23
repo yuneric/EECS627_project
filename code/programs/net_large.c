@@ -124,9 +124,9 @@ int main() {
             print_str("\n--- Pipeline Iteration ---\n");
             PRINT_VAR("i (pipeline index)", i);
             print_str("Clock cfg: ");
-            print_dec(5-l);
+            print_dec(5);
             print_str("\n");
-            npu_clock_cfg(5-l);
+            npu_clock_cfg(5);
 
             // 1. DMA: Load Tile (i)
             if (i < num_tiles) {

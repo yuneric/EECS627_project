@@ -414,7 +414,7 @@ module sa_slice_tb;
         // // repeat (4) @(posedge tb_clk);
         // rst_n = 1;
         // repeat (2) @(posedge tb_clk);
-        for (test_id = 9; test_id < 10; test_id = test_id + 1) begin
+        for (test_id = 0; test_id < NUM_TESTS; test_id = test_id + 1) begin
             run_test(test_id);
         end
 
